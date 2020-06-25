@@ -14,6 +14,7 @@
 #include <QTimer>
 #include <QWheelEvent>
 
+#include <fstream>
 #include "core/node.h"
 #include "core/object.h"
 #include "core/particle.h"
@@ -26,6 +27,11 @@ class VisItem : public GLItem {
 
  public:
   explicit VisItem(QQuickItem* parent = nullptr);
+
+  bool fileExists(QString path) {
+    std::ifstream stream(path.toStdString());
+    return stream.good();
+  }
 
  signals:
   void stepForParticleAt(Node node);

@@ -89,6 +89,8 @@ ApplicationWindow {
     }
   }
 
+  property string scriptPath: ""
+
   VisItem {
     id: vis
     focus: true
@@ -266,6 +268,23 @@ ApplicationWindow {
       }
     }
 
+    TextField {
+      id: scriptPathfield
+      Layout.preferredWidth: parent.width
+      textColor: "black"
+      placeholderText: "Complete Script Path for Execution"
+      style: TextFieldStyle {
+        background: Rectangle {
+          implicitHeight: 32.5
+          border.width: 1
+          border.color: "#888"
+          color: "#eee"
+          opacity: 0.9
+        }
+      }
+      onEditingFinished: scriptPath = text
+    }
+
     A_Button {
       id: instantiateButton
       text: "Instantiate"
@@ -273,7 +292,14 @@ ApplicationWindow {
 
       onClicked: {
         vis.forceActiveFocus()
-        instantiate(algorithmSelectBox.currentText)
+        if(scriptPath == "") {
+          instantiate(algorithmSelectBox.currentText)
+        } else {
+          if(fileExists(scriptPath)) {
+
+          }
+        }
+
       }
     }
 

@@ -5,6 +5,7 @@
 #include "ui/visitem.h"
 
 #include <cmath>
+#include <fstream>
 
 #include <QImage>
 #include <QMutexLocker>
@@ -347,3 +348,5 @@ void VisItem::wheelEvent(QWheelEvent* e) {
   view.modifyZoom(mousePos, mouseAngleDelta);
   e->accept();
 }
+
+
