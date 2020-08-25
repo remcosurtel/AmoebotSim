@@ -125,6 +125,17 @@ class LeaderElectionAlg : public Algorithm {
   void instantiate(const int numParticles = 100, const double holeProb = 0.2);
 };
 
+// Leader Election by Erosion.
+class LeaderElectionErosionAlg : public Algorithm {
+    Q_OBJECT
+
+public:
+    LeaderElectionErosionAlg();
+
+public slots:
+    void instantiate(const int numParticles = 100);
+};
+
 // Basic Shape Formation.
 class ShapeFormationAlg : public Algorithm {
   Q_OBJECT

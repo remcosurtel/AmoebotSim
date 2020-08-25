@@ -12,6 +12,7 @@
 #include "alg/infobjcoating.h"
 #include "alg/leaderelection.h"
 #include "alg/shapeformation.h"
+#include "alg/leaderelection_erosion.h"
 
 Algorithm::Algorithm(QString name, QString signature)
     : _name(name),
@@ -157,6 +158,20 @@ void LeaderElectionAlg::instantiate(const int numParticles,
   }
 }
 
+LeaderElectionErosionAlg::LeaderElectionErosionAlg() :
+    Algorithm("Leader Election by Erosion", "leaderelection_erosion") {
+    addParameter("# Particles", "100");
+}
+
+void LeaderElectionErosionAlg::instantiate(const int numParticles) {
+    if (numParticles <= 0) {
+        emit log("# particles must be > 0", true);
+    }
+    else {
+        emit setSystem(std::make_shared<LeaderElectionErosionSystem>(numParticles));
+    }
+}
+
 ShapeFormationAlg::ShapeFormationAlg() :
   Algorithm("Basic Shape Formation", "shapeformation") {
   addParameter("# Particles", "200");
@@ -195,6 +210,7 @@ AlgorithmList::AlgorithmList() {
   _algorithms.push_back(new CompressionAlg());  
   _algorithms.push_back(new InfObjCoatingAlg());    
   _algorithms.push_back(new LeaderElectionAlg());
+  _algorithms.push_back(new LeaderElectionErosionAlg());
   _algorithms.push_back(new ShapeFormationAlg());
 }
 
