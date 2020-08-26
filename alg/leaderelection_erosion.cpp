@@ -14,9 +14,10 @@ LeaderElectionErosionParticle::LeaderElectionErosionParticle(const Node head,
                                                              const int globalTailDir,
                                                              const int orientation,
                                                              AmoebotSystem& system,
-                                                             State state)
+                                                             State state,
+                                                             int cornerType)
     : AmoebotParticle(head, globalTailDir, orientation, system),
-      state(State::Eligible) {
+      state(state), cornerType(-2) {
     
 }
 
@@ -43,7 +44,7 @@ void LeaderElectionErosionParticle::activate() {
              * - Two 1-corner particles remain
              * - Three 2-corner particles remain
              */
-            int cornerType = getCornerType();
+            cornerType = getCornerType();
             if (cornerType < 0) {
                 // Not a corner particle.
                 return;
@@ -60,7 +61,11 @@ void LeaderElectionErosionParticle::activate() {
                     if (hasNbrAtLabel(dir)) {
                         LeaderElectionErosionParticle nbr = nbrAtLabel(dir);
                         if (nbr.state == State::Eligible) {
-                            if (nbr.getCornerType() != cornerType) {
+                            if (nbr.cornerType == -2) {
+                                // Neighbour not updated.
+                                return;
+                            }
+                            if (nbr.cornerType != cornerType) {
                                 terminate = false;
                             }
                         }
@@ -204,45 +209,43 @@ LeaderElectionErosionSystem::LeaderElectionErosionSystem(int numParticles) {
 
     // Insert the seed at (0,0).
     insert(new LeaderElectionErosionParticle(Node(0, 0), -1, randDir(), *this,
-        LeaderElectionErosionParticle::State::Eligible));
+        LeaderElectionErosionParticle::State::Eligible, -2));
     std::set<Node> occupied;
     occupied.insert(Node(0, 0));
 
-    std::set<Node> candidates;
-    for (int i = 0; i < 6; ++i) {
-        candidates.insert(Node(0, 0).nodeInDir(i));
-    }
-
-    // Add inactive particles.
-    int numNonStaticParticles = 0;
-    while (numNonStaticParticles < numParticles && !candidates.empty()) {
-        // Pick random candidate.
-        int randIndex = randInt(0, candidates.size());
-        Node randomCandidate;
-        for (auto it = candidates.begin(); it != candidates.end(); ++it) {
-            if (randIndex == 0) {
-                randomCandidate = *it;
-                candidates.erase(it);
-                break;
-            }
-            else {
-                randIndex--;
-            }
-        }
-
-        occupied.insert(randomCandidate);
-
-        // Add this candidate as a particle if not a hole.
-        if (randBool(1.0 - holeProb)) {
-            insert(new LeaderElectionErosionParticle(randomCandidate, -1, randDir(), *this,
-                LeaderElectionErosionParticle::State::Eligible));
-            ++numNonStaticParticles;
-
-            // Add new candidates.
-            for (int i = 0; i < 6; ++i) {
-                auto neighbor = randomCandidate.nodeInDir(i);
-                if (occupied.find(neighbor) == occupied.end()) {
-                    candidates.insert(neighbor);
+    int added = 1;
+    while (added < numParticles) {
+        for (Node n : occupied) {
+            int dir = randDir();
+            auto nbr = n.nodeInDir(dir);
+            if (occupied.find(nbr) == occupied.end()) {
+                int switches = 0;
+                auto tmp = nbr.nodeInDir((dir + 5) % 6);
+                bool lastOcc = occupied.find(tmp) != occupied.end();
+                for (int count = 0; count < 6; ++count) {
+                    int i = (count + dir) % 6;
+                    auto nbrNbr = nbr.nodeInDir(i);
+                    if (occupied.find(nbrNbr) != occupied.end()) {
+                        if (!lastOcc) {
+                            ++switches;
+                        }
+                        lastOcc = true;
+                    }
+                    else {
+                        if (lastOcc) {
+                            ++switches;
+                        }
+                        lastOcc = false;
+                    }
+                }
+                if (switches <= 2) {
+                    occupied.insert(nbr);
+                    insert(new LeaderElectionErosionParticle(nbr, -1, randDir(), *this,
+                        LeaderElectionErosionParticle::State::Eligible, -2));
+                    ++added;
+                    if (added == numParticles) {
+                        break;
+                    }
                 }
             }
         }
@@ -258,11 +261,10 @@ bool LeaderElectionErosionSystem::hasTerminated() const {
 
     for (auto p : particles) {
         auto hp = dynamic_cast<LeaderElectionErosionParticle*>(p);
-        if (hp->state != LeaderElectionErosionParticle::State::Leader &&
-            hp->state != LeaderElectionErosionParticle::State::Finished) {
-            return false;
+        if (hp->state == LeaderElectionErosionParticle::State::Leader) {
+            return true;
         }
     }
 
-    return true;
+    return false;
 }

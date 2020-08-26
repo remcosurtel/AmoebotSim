@@ -29,11 +29,13 @@ public:
 
     State state;
 
+    int cornerType;
+
     // Constructs a new particle with a node position for its head, a global
     // compass direction from its head to its tail (-1 if contracted), an offset
     // for its local compass, and a system which it belongs to.
     LeaderElectionErosionParticle(const Node head, const int globalTailDir,
-        const int orientation, AmoebotSystem& system, State state);
+        const int orientation, AmoebotSystem& system, State state, int cornerType);
 
     // Executes one particle activation.
     virtual void activate();
