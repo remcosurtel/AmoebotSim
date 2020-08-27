@@ -8,6 +8,10 @@
 
 #include <QtGlobal>
 
+#include <QDebug>
+
+using namespace std;
+
  //----------------------------BEGIN PARTICLE CODE----------------------------
 
 LeaderElectionErosionParticle::LeaderElectionErosionParticle(const Node head,
@@ -17,13 +21,15 @@ LeaderElectionErosionParticle::LeaderElectionErosionParticle(const Node head,
                                                              State state,
                                                              int cornerType,
                                                              bool stable,
-                                                             bool stateStable)
-    : AmoebotParticle(head, globalTailDir, orientation, system),
-      state(state), cornerType(cornerType), stable(stable), stateStable(stateStable) {
+                                                             bool stateStable,
+                                                             bool treeDone)
+    : AmoebotParticle(head, globalTailDir, orientation, system), state(state), 
+    cornerType(cornerType), stable(stable), stateStable(stateStable), treeDone(treeDone) {
     
 }
 
 void LeaderElectionErosionParticle::activate() {
+    // 1. Lattice consumption phase.
     if (state == State::Eligible) {
         /* Determine the number of neighbours of the current particle.
          * If there are no neighbours, then that means the particle is the only
@@ -57,7 +63,7 @@ void LeaderElectionErosionParticle::activate() {
             // If cornerType for some neighbour is not known, wait.
             for (int dir = 0; dir < 6; dir++) {
                 if (hasNbrAtLabel(dir)) {
-                    LeaderElectionErosionParticle nbr = nbrAtLabel(dir);
+                    LeaderElectionErosionParticle& nbr = nbrAtLabel(dir);
                     if (nbr.cornerType == -2) {
                         stateStable = true;
                         return;
@@ -91,7 +97,7 @@ void LeaderElectionErosionParticle::activate() {
             else if (cornerType == 1) {
                 for (int dir = 0; dir < 6; dir++) {
                     if (hasNbrAtLabel(dir)) {
-                        LeaderElectionErosionParticle nbr = nbrAtLabel(dir);
+                        LeaderElectionErosionParticle& nbr = nbrAtLabel(dir);
                         if (nbr.state != State::Eroded) {
                             // If unique elible neighbour is 1-corner -> candidate
                             // Otherwise erode.
@@ -114,7 +120,7 @@ void LeaderElectionErosionParticle::activate() {
                 // Otherwise erode.
                 for (int dir = 0; dir < 6; dir++) {
                     if (hasNbrAtLabel(dir)) {
-                        LeaderElectionErosionParticle nbr = nbrAtLabel(dir);
+                        LeaderElectionErosionParticle& nbr = nbrAtLabel(dir);
                         if (nbr.state != State::Eroded) {
                             if (nbr.cornerType != 2) {
                                 state = State::Eroded;
@@ -136,9 +142,126 @@ void LeaderElectionErosionParticle::activate() {
             }
         }
     }
+    else if (state == State::Candidate) {
+        // Update 'stable' flag according to neighbours.
+        updateStability();
+
+        // Update internal cornerType 
+        cornerType = getCornerType();
+
+        // If stable flag is not set, wait.
+        if (!stable) {
+            stateStable = true;
+            return;
+        }
+
+        if (cornerType == 0) {
+            // If unique 0-corner candidate -> become leader.
+            state = State::Leader;
+            stateStable = false;
+            return;
+        } // Else: move to phase 2: spanning forest construction phase.
+        else {
+            // If other candidates have not set their candidate flag yet, wait.
+            for (int dir = 0; dir < 6; dir++) {
+                if (hasNbrAtLabel(dir)) {
+                    LeaderElectionErosionParticle& nbr = nbrAtLabel(dir);
+                    if (nbr.state == State::Eligible) {
+                        stateStable = true;
+                        return;
+                    }
+                }
+            }
+            state = State::Root;
+            parent = -1;
+            stateStable = false;
+            return;
+        }
+    }
+    else if (state == State::Root) {
+        // 2. Spanning forest construction phase.
+        // Root receives parent tokens from neighbours.
+        // Once all children set treeDone to true, the phase is finished.
+        if (!treeDone) {
+            while (hasToken<ParentToken>()) {
+                int globalParentDir = takeToken<ParentToken>()->origin;
+                int localParentDir = globalToLocalDir(globalParentDir);
+                int localChildDir = (localParentDir + 3) % 6;
+                children.insert(localChildDir);
+            }
+            if (treeIsDone()) {
+                treeDone = true;
+            }
+        }
+        stateStable = true;
+        return;
+    }
+    else if (state == State::Eroded) {
+        // 2. Spanning forest construction phase.
+        // If a neighbour joins a tree, become its child in the tree.
+        for (int dir = 0; dir < 6; dir++) {
+            if (hasNbrAtLabel(dir)) {
+                LeaderElectionErosionParticle& nbr = nbrAtLabel(dir);
+                if (nbr.state == State::Root) {
+                    state = State::Tree;
+                    parent = dir;
+                    int globalizedDir = localToGlobalDir(parent);
+                    nbr.putToken(std::make_shared<ParentToken>(globalizedDir));
+                    stateStable = false;
+                    return;
+                }
+                else if (nbr.state == State::Tree) {
+                    state = State::Tree;
+                    parent = dir;
+                    int globalizedDir = localToGlobalDir(parent);
+                    nbr.putToken(std::make_shared<ParentToken>(globalizedDir));
+                    stateStable = false;
+                    return;
+                }
+            }
+        }
+        stateStable = true;
+        return;
+    }
+    else if (state == State::Tree) {
+        // 2. Spanning forest construction phase.
+        // Tree is done if all neighbours are in the tree
+        // and all children are done
+        if (!treeDone) {
+            while (hasToken<ParentToken>()) {
+                int globalParentDir = takeToken<ParentToken>()->origin;
+                int localParentDir = globalToLocalDir(globalParentDir);
+                int localChildDir = (localParentDir + 3) % 6;
+                children.insert(localChildDir);
+            }
+            if (treeIsDone()) {
+                treeDone = true;
+            }
+        }
+        stateStable = true;
+        return;
+    }
     else {
         stateStable = true;
+        return;
     }
+}
+
+bool LeaderElectionErosionParticle::treeIsDone() const {
+    for (int dir = 0; dir < 6; dir++) {
+        if (hasNbrAtLabel(dir)) {
+            LeaderElectionErosionParticle& nbr = nbrAtLabel(dir);
+            if (children.find(dir) != children.end()) {
+                if (!nbr.treeDone) {
+                    return false;
+                }
+            }
+            else if (nbr.state != State::Tree && nbr.state != State::Root){
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 bool LeaderElectionErosionParticle::isLocked() const {
@@ -147,7 +270,7 @@ bool LeaderElectionErosionParticle::isLocked() const {
         int nbrs[6] = {};
         for (int dir = 0; dir < 6; dir++) {
             if (hasNbrAtLabel(dir)) {
-                LeaderElectionErosionParticle nbr = nbrAtLabel(dir);
+                LeaderElectionErosionParticle& nbr = nbrAtLabel(dir);
                 if (nbr.state != State::Eroded) {
                     nbrs[dir] = nbr.cornerType;
                 }
@@ -204,11 +327,20 @@ void LeaderElectionErosionParticle::updateStability() {
     stable = true;
     for (int dir = 0; dir < 6; dir++) {
         if (hasNbrAtLabel(dir)) {
-            LeaderElectionErosionParticle nbr = nbrAtLabel(dir);
+            LeaderElectionErosionParticle& nbr = nbrAtLabel(dir);
             if (!nbr.stateStable) {
                 stable = false;
             }
         }
+    }
+}
+
+int LeaderElectionErosionParticle::headMarkDir() const {
+    if (state == State::Tree) {
+        return parent;
+    }
+    else {
+        return -1;
     }
 }
 
@@ -225,6 +357,18 @@ int LeaderElectionErosionParticle::headMarkColor() const {
     else if (state == State::Finished) {
         return 0xffe000;
     }
+    else if (state == State::Root) {
+        if (treeDone) {
+            return 0x5a2d00;
+        }
+        return 0xc46200;
+    }
+    else if (state == State::Tree) {
+        if (treeDone) {
+            return 0x006100;
+        }
+        return 0x00b000;
+    }
     else if (isLocked()) {
         return 0xfff000;
     }
@@ -240,7 +384,7 @@ int LeaderElectionErosionParticle::getCornerType() const {
     int nbrs[6] = {};
     for (int dir = 0; dir < 6; dir++) {
         if (hasNbrAtLabel(dir)) {
-            LeaderElectionErosionParticle nbr = nbrAtLabel(dir);
+            LeaderElectionErosionParticle& nbr = nbrAtLabel(dir);
             if (nbr.state != State::Eroded) {
                 nbrs[dir] = 1;
             }
@@ -335,7 +479,7 @@ LeaderElectionErosionSystem::LeaderElectionErosionSystem(int numParticles) {
 
     // Insert the seed at (0,0).
     insert(new LeaderElectionErosionParticle(Node(0, 0), -1, randDir(), *this,
-        LeaderElectionErosionParticle::State::Eligible, -2, false, false));
+        LeaderElectionErosionParticle::State::Eligible, -2, false, false, false));
     std::set<Node> occupied;
     occupied.insert(Node(0, 0));
 
@@ -367,7 +511,7 @@ LeaderElectionErosionSystem::LeaderElectionErosionSystem(int numParticles) {
                 if (switches <= 2) {
                     occupied.insert(nbr);
                     insert(new LeaderElectionErosionParticle(nbr, -1, randDir(), *this,
-                        LeaderElectionErosionParticle::State::Eligible, -2, false, false));
+                        LeaderElectionErosionParticle::State::Eligible, -2, false, false, false));
                     ++added;
                     if (added == numParticles) {
                         break;

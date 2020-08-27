@@ -17,6 +17,8 @@
 #include "core/amoebotparticle.h"
 #include "core/amoebotsystem.h"
 
+using namespace std;
+
 class LeaderElectionErosionParticle : public AmoebotParticle {
 public:
     enum class State {
@@ -24,11 +26,17 @@ public:
         Eligible,
         Candidate,
         Eroded,
+        Root,
+        Tree,
         Leader,
         Finished
     };
 
     State state;
+
+    int parent;
+
+    set <int> children;
 
     int cornerType;
 
@@ -36,12 +44,14 @@ public:
 
     bool stable;
 
+    bool treeDone;
+
     // Constructs a new particle with a node position for its head, a global
     // compass direction from its head to its tail (-1 if contracted), an offset
     // for its local compass, and a system which it belongs to.
     LeaderElectionErosionParticle(const Node head, const int globalTailDir,
         const int orientation, AmoebotSystem& system, State state, int cornerType,
-        bool stable, bool stateStable);
+        bool stable, bool stateStable, bool treeDone);
 
     // Executes one particle activation.
     virtual void activate();
@@ -58,6 +68,11 @@ public:
     // on which the black head marker is drawn.
     virtual int headMarkColor() const;
 
+    // Returns the local directions from the head (respectively, tail) on which to
+    // draw the direction markers. Intended to be overridden by particle
+    // subclasses, as the default implementations return -1 (no markers).
+    virtual int headMarkDir() const;
+
     // Gets a reference to the neighboring particle incident to the specified port
     // label. Crashes if no such particle exists at this label; consider using
     // hasNbrAtLabel() first if unsure.
@@ -72,6 +87,25 @@ public:
 
     // Update the 'stable' flag by checking neighbouring particles.
     void updateStability();
+
+    // Checks if the treeDone flag should be set.
+    bool treeIsDone() const;
+
+protected:
+    // The LeaderElectionToken struct provides a general framework of any token
+    // under the General Leader Election algorithm.
+    struct LeaderElectionToken : public Token {
+        // origin is used to define the direction (label) that a LeaderElectionToken
+        // was received from.
+        int origin;
+    };
+
+    // Used in tree formation to signal the parent particle.
+    struct ParentToken : public LeaderElectionToken {
+        ParentToken(int origin = -1) {
+            this->origin = origin;
+        }
+    };
 };
 
 class LeaderElectionErosionSystem : public AmoebotSystem {
