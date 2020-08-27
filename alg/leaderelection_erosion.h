@@ -20,6 +20,7 @@
 class LeaderElectionErosionParticle : public AmoebotParticle {
 public:
     enum class State {
+        None,
         Eligible,
         Candidate,
         Eroded,
@@ -31,14 +32,24 @@ public:
 
     int cornerType;
 
+    bool stateStable;
+
+    bool stable;
+
     // Constructs a new particle with a node position for its head, a global
     // compass direction from its head to its tail (-1 if contracted), an offset
     // for its local compass, and a system which it belongs to.
     LeaderElectionErosionParticle(const Node head, const int globalTailDir,
-        const int orientation, AmoebotSystem& system, State state, int cornerType);
+        const int orientation, AmoebotSystem& system, State state, int cornerType,
+        bool stable, bool stateStable);
 
     // Executes one particle activation.
     virtual void activate();
+
+    // Check if the calling particle is 'locked'.
+    // A particle is locked iff it is a 3-corner particle and
+    // its middle eligible neighbour is also a 3-corner particle.
+    bool isLocked() const;
 
     // Functions for altering a particle's cosmetic appearance; headMarkColor
     // (respectively, tailMarkColor) returns the color to be used for the ring
@@ -58,6 +69,9 @@ public:
     // Returns a count of the number of particle neighbors surrounding the calling
     // particle.
     int getNumberOfNbrs() const;
+
+    // Update the 'stable' flag by checking neighbouring particles.
+    void updateStability();
 };
 
 class LeaderElectionErosionSystem : public AmoebotSystem {

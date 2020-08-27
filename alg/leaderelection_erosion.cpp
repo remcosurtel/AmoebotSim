@@ -15,22 +15,25 @@ LeaderElectionErosionParticle::LeaderElectionErosionParticle(const Node head,
                                                              const int orientation,
                                                              AmoebotSystem& system,
                                                              State state,
-                                                             int cornerType)
+                                                             int cornerType,
+                                                             bool stable,
+                                                             bool stateStable)
     : AmoebotParticle(head, globalTailDir, orientation, system),
-      state(state), cornerType(-2) {
+      state(state), cornerType(cornerType), stable(stable), stateStable(stateStable) {
     
 }
 
 void LeaderElectionErosionParticle::activate() {
     if (state == State::Eligible) {
-        /* Determine the number of neighbors of the current particle.
-         * If there are no neighbors, then that means the particle is the only
+        /* Determine the number of neighbours of the current particle.
+         * If there are no neighbours, then that means the particle is the only
          * one in the system and should declare itself as the leader.
          * Otherwise, the particle will participate in leader election.
          */
         int numNbrs = getNumberOfNbrs();
         if (numNbrs == 0) {
             state = State::Leader;
+            stateStable = false;
             return;
         }
         else {
@@ -44,46 +47,166 @@ void LeaderElectionErosionParticle::activate() {
              * - Two 1-corner particles remain
              * - Three 2-corner particles remain
              */
+
+            // Update 'stable' flag according to neighbours.
+            updateStability();
+
+            // Update internal cornerType 
             cornerType = getCornerType();
+
+            // If cornerType for some neighbour is not known, wait.
+            for (int dir = 0; dir < 6; dir++) {
+                if (hasNbrAtLabel(dir)) {
+                    LeaderElectionErosionParticle nbr = nbrAtLabel(dir);
+                    if (nbr.cornerType == -2) {
+                        stateStable = true;
+                        return;
+                    }
+                }
+            }
+
+            // If stable flag is not set, wait.
+            if (!stable) {
+                stateStable = true;
+                return;
+            }
+
+            // If locked, wait.
+            if (isLocked()) {
+                stateStable = true;
+                return;
+            }
+
             if (cornerType < 0) {
-                // Not a corner particle.
+                // Not a corner particle -> wait.
+                stateStable = true;
                 return;
             }
             else if (cornerType == 0) {
-                // One 0-corner particle remaining: leader.
-                state = State::Leader;
+                // One 0-corner particle remaining.
+                state = State::Candidate;
+                stateStable = false;
                 return;
             }
-            else if (cornerType < 3) {
-                // Check termination condition.
-                bool terminate = true;
+            else if (cornerType == 1) {
                 for (int dir = 0; dir < 6; dir++) {
                     if (hasNbrAtLabel(dir)) {
                         LeaderElectionErosionParticle nbr = nbrAtLabel(dir);
-                        if (nbr.state == State::Eligible) {
-                            if (nbr.cornerType == -2) {
-                                // Neighbour not updated.
+                        if (nbr.state != State::Eroded) {
+                            // If unique elible neighbour is 1-corner -> candidate
+                            // Otherwise erode.
+                            if (nbr.cornerType == 1) {
+                                state = State::Candidate;
+                                stateStable = false;
                                 return;
                             }
-                            if (nbr.cornerType != cornerType) {
-                                terminate = false;
+                            else {
+                                state = State::Eroded;
+                                stateStable = false;
+                                return;
                             }
                         }
                     }
                 }
-                // If termination condition holds, advance to next phase.
-                if (terminate) {
-                    state = State::Candidate;
-                    return;
+            }
+            else if (cornerType == 2) {
+                // If both eligible neighbours are 2-corner particles -> candidate
+                // Otherwise erode.
+                for (int dir = 0; dir < 6; dir++) {
+                    if (hasNbrAtLabel(dir)) {
+                        LeaderElectionErosionParticle nbr = nbrAtLabel(dir);
+                        if (nbr.state != State::Eroded) {
+                            if (nbr.cornerType != 2) {
+                                state = State::Eroded;
+                                stateStable = false;
+                                return;
+                            }
+                        }
+                    }
                 }
-                // If termination condition does not hold, erode.
-                state = State::Eroded;
+                state = State::Candidate;
+                stateStable = false;
                 return;
             }
             else {
                 // 3-corner particle -> erode.
                 state = State::Eroded;
+                stateStable = false;
                 return;
+            }
+        }
+    }
+    else {
+        stateStable = true;
+    }
+}
+
+bool LeaderElectionErosionParticle::isLocked() const {
+    if (cornerType == 3) {
+        // initialize array with integer for each neighbour.
+        int nbrs[6] = {};
+        for (int dir = 0; dir < 6; dir++) {
+            if (hasNbrAtLabel(dir)) {
+                LeaderElectionErosionParticle nbr = nbrAtLabel(dir);
+                if (nbr.state != State::Eroded) {
+                    nbrs[dir] = nbr.cornerType;
+                }
+                else {
+                    nbrs[dir] = -3;
+                }
+            }
+            else {
+                nbrs[dir] = -4;
+            }
+        }
+        int eligibleNbrs = 0;
+        for (int i = 0; i < 6; i++) {
+            eligibleNbrs = eligibleNbrs + nbrs[i];
+        }
+        if (eligibleNbrs != 3) {
+            return false;
+        }
+        else if (eligibleNbrs == 3) {
+            for (int i = 0; i < 6; i++) {
+                if (nbrs[i] >= -2) {
+                    if (i > 0) {
+                        if (nbrs[i + 1] >= -2 && nbrs[i + 2] >= -2) {
+                            return nbrs[i + 1] == 3;
+                        }
+                        else {
+                            return false;
+                        }
+                    }
+                    else {
+                        if (nbrs[i + 1] >= -2 && nbrs[i + 2] >= -2) {
+                            return nbrs[i + 1] == 3;
+                        }
+                        else if (nbrs[i + 1] >= -2 && nbrs[5] >= -2) {
+                            return nbrs[i] == 3;
+                        }
+                        else if (nbrs[5] >= -2 && nbrs[4] >= -2) {
+                            return nbrs[5] == 3;
+                        }
+                        else {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    else {
+        return false;
+    }
+}
+
+void LeaderElectionErosionParticle::updateStability() {
+    stable = true;
+    for (int dir = 0; dir < 6; dir++) {
+        if (hasNbrAtLabel(dir)) {
+            LeaderElectionErosionParticle nbr = nbrAtLabel(dir);
+            if (!nbr.stateStable) {
+                stable = false;
             }
         }
     }
@@ -101,6 +224,9 @@ int LeaderElectionErosionParticle::headMarkColor() const {
     }
     else if (state == State::Finished) {
         return 0xffe000;
+    }
+    else if (isLocked()) {
+        return 0xfff000;
     }
 
     return -1;
@@ -209,7 +335,7 @@ LeaderElectionErosionSystem::LeaderElectionErosionSystem(int numParticles) {
 
     // Insert the seed at (0,0).
     insert(new LeaderElectionErosionParticle(Node(0, 0), -1, randDir(), *this,
-        LeaderElectionErosionParticle::State::Eligible, -2));
+        LeaderElectionErosionParticle::State::Eligible, -2, false, false));
     std::set<Node> occupied;
     occupied.insert(Node(0, 0));
 
@@ -241,7 +367,7 @@ LeaderElectionErosionSystem::LeaderElectionErosionSystem(int numParticles) {
                 if (switches <= 2) {
                     occupied.insert(nbr);
                     insert(new LeaderElectionErosionParticle(nbr, -1, randDir(), *this,
-                        LeaderElectionErosionParticle::State::Eligible, -2));
+                        LeaderElectionErosionParticle::State::Eligible, -2, false, false));
                     ++added;
                     if (added == numParticles) {
                         break;
