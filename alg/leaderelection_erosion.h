@@ -46,6 +46,18 @@ public:
 
     bool treeDone;
 
+    bool chooseTokenSent = false;
+
+    int numCandidates = 0;
+
+    set <int> candidates;
+
+    bool sameHandedness = false;
+
+    bool hasMoved = false;
+
+    int numNbrsCandidate = -1;
+
     // Constructs a new particle with a node position for its head, a global
     // compass direction from its head to its tail (-1 if contracted), an offset
     // for its local compass, and a system which it belongs to.
@@ -91,6 +103,10 @@ public:
     // Checks if the treeDone flag should be set.
     bool treeIsDone() const;
 
+    // Determines the number of adjacent candidate particles.
+    // Note that particles in state 'Root' are also candidates.
+    int getNumCandidates();
+
 protected:
     // The LeaderElectionToken struct provides a general framework of any token
     // under the General Leader Election algorithm.
@@ -103,6 +119,43 @@ protected:
     // Used in tree formation to signal the parent particle.
     struct ParentToken : public LeaderElectionToken {
         ParentToken(int origin = -1) {
+            this->origin = origin;
+        }
+    };
+
+    // Handedness agreement tokens.
+    struct YouChooseToken : public LeaderElectionToken {
+        YouChooseToken(int origin = -1) {
+            this->origin = origin;
+        }
+    };
+    struct YouDoNotChooseToken : public LeaderElectionToken {
+        YouDoNotChooseToken(int origin = -1) {
+            this->origin = origin;
+        }
+    };
+    struct ChosenToken : public LeaderElectionToken {
+        ChosenToken(int origin = -1) {
+            this->origin = origin;
+        }
+    };
+    struct NotChosenToken : public LeaderElectionToken {
+        NotChosenToken(int origin = -1) {
+            this->origin = origin;
+        }
+    };
+    struct SameHandednessToken : public LeaderElectionToken {
+        SameHandednessToken(int origin = -1) {
+            this->origin = origin;
+        }
+    };
+    struct IAmEliminatedToken : public LeaderElectionToken {
+        IAmEliminatedToken(int origin = -1) {
+            this->origin = origin;
+        }
+    };
+    struct YouAreEliminatedToken : public LeaderElectionToken {
+        YouAreEliminatedToken(int origin = -1) {
             this->origin = origin;
         }
     };

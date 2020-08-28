@@ -191,6 +191,351 @@ void LeaderElectionErosionParticle::activate() {
             }
             if (treeIsDone()) {
                 treeDone = true;
+                stateStable = false;
+                return;
+            }
+        }
+        else {
+            // 3. Handedness agreement phase.
+            // Candidate leaders (roots) agree on handedness first.
+            // Process then proceeds through the forest from parents to children.
+            qDebug() << "Particle: " << this->head.x << ", " << this->head.y;
+
+            if (numCandidates == 0) {
+                numCandidates = getNumCandidates();
+            }
+            qDebug() << "Adjacent candidates: " << numCandidates;
+
+            if (numCandidates == 1) {
+                // If there is 1 adjacent candidate (i.e. there are 2 candidates),
+                // Let this particle be p, and call the other candidate q.
+                // Get 2 vertices that are in common neighbours between p and q.
+                // Call these u and v.
+                int dir;
+                for (auto c : candidates) {
+                    dir = c;
+                    break;
+                }
+
+                if (!isContracted()) {
+                    dir = dirToTailLabel(dir);
+                }
+
+                qDebug() << "Getting neighbour at dir:" << dir;
+
+                LeaderElectionErosionParticle& q = nbrAtLabel(dir);
+
+                qDebug() << "Success.";
+
+                int dir_u = (dir + 5) % 6;
+                int dir_v = (dir + 1) % 6;
+                if (numNbrsCandidate == -1) {
+                    if (hasNbrAtLabel(dir_u) && hasNbrAtLabel(dir_v)) {
+                        numNbrsCandidate = 2;
+                    }
+                    else if (hasNbrAtLabel(dir_u) || hasNbrAtLabel(dir_v)) {
+                        numNbrsCandidate = 1;
+                    }
+                    else {
+                        numNbrsCandidate = 0;
+                    }
+                    if (hasTailAtLabel(dir)) {
+                        numNbrsCandidate = numNbrsCandidate - 1;
+                    }
+                }
+
+                qDebug() << "Non-candidate neighbours: " << numNbrsCandidate;
+
+                updateStability();
+                qDebug() << "Stable: " << stable;
+                if (!stable) {
+                    stateStable = true;
+                    return;
+                }
+
+                if (numNbrsCandidate == 2) {
+                    // If both u and v are occupied
+                    LeaderElectionErosionParticle& u = nbrAtLabel(dir_u);
+                    LeaderElectionErosionParticle& v = nbrAtLabel(dir_v);
+                    if (!chooseTokenSent) {
+                        if ((dir - dir_u + 6) % 6 == 1) {
+                            // Have u choose.
+                            int globalizedDirU = localToGlobalDir(dir_u);
+                            u.putToken(std::make_shared<YouChooseToken>(globalizedDirU));
+
+                            int globalizedDirV = localToGlobalDir(dir_v);
+                            v.putToken(std::make_shared<YouDoNotChooseToken>(globalizedDirV));
+
+                            chooseTokenSent = true;
+                        }
+                        else {
+                            // Have v choose.
+                            int globalizedDirV = localToGlobalDir(dir_v);
+                            v.putToken(std::make_shared<YouChooseToken>(globalizedDirV));
+
+                            int globalizedDirU = localToGlobalDir(dir_u);
+                            u.putToken(std::make_shared<YouDoNotChooseToken>(globalizedDirU));
+
+                            chooseTokenSent = true;
+                        }
+                    }
+                    else if (countTokens<SameHandednessToken>() == 2 || sameHandedness) {
+                        if (!sameHandedness) {
+                            takeToken<SameHandednessToken>();
+                            takeToken<SameHandednessToken>();
+                            sameHandedness = true;
+                        }
+
+                        // Agreed on handedness with adjacent candidate.
+                        // Proceed to impose handedness on tree.
+                        // TODO ...
+
+                        qDebug() << "Agreed on handedness.";
+
+                    }
+                    stateStable = true;
+                    return;
+                }
+                else if (numNbrsCandidate == 1) {
+                    // If one of u, v is occupied, have the occupied particle choose.
+                    if (hasNbrAtLabel(dir_u)) {
+                        LeaderElectionErosionParticle& u = nbrAtLabel(dir_u);
+                        if (!chooseTokenSent) {
+                            int globalizedDir = localToGlobalDir(dir_u);
+                            u.putToken(std::make_shared<YouChooseToken>(globalizedDir));
+                            chooseTokenSent = true;
+                        }
+                        else {
+                            if (hasToken<ChosenToken>()) {
+                                if (hasToken<ParentToken>()) {
+                                    int globalParentDir = takeToken<ParentToken>()->origin;
+                                    int localParentDir = globalToLocalDir(globalParentDir);
+                                    int localChildDir = (localParentDir + 3) % 6;
+                                    children.insert(localChildDir);
+
+                                    int globalChosenDir = takeToken<ChosenToken>()->origin;
+                                    int localChosenDir = globalToLocalDir(globalChosenDir);
+                                    int localNbrDir = (localChosenDir + 3) % 6;
+                                    if (localNbrDir == dir_u) {
+                                        state = State::Leader;
+                                        stateStable = false;
+                                        return;
+                                    }
+                                }
+                            }
+                            else if (hasToken<NotChosenToken>()) {
+                                int globalChosenDir = takeToken<NotChosenToken>()->origin;
+                                int localChosenDir = globalToLocalDir(globalChosenDir);
+                                int localNbrDir = (localChosenDir + 3) % 6;
+                                if (localNbrDir == dir_u) {
+                                    state = State::Tree;
+                                    parent = dir;
+                                    int globalizedDir = localToGlobalDir(parent);
+                                    q.putToken(std::make_shared<ParentToken>(globalizedDir));
+                                    stateStable = false;
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                    else {
+                        LeaderElectionErosionParticle& v = nbrAtLabel(dir_v);
+                        if (!chooseTokenSent) {
+                            int globalizedDir = localToGlobalDir(dir_v);
+                            v.putToken(std::make_shared<YouChooseToken>(globalizedDir));
+                            chooseTokenSent = true;
+                        }
+                        else {
+                            if (hasToken<ChosenToken>()) {
+                                if (hasToken<ParentToken>()) {
+                                    int globalParentDir = takeToken<ParentToken>()->origin;
+                                    int localParentDir = globalToLocalDir(globalParentDir);
+                                    int localChildDir = (localParentDir + 3) % 6;
+                                    children.insert(localChildDir);
+
+                                    int globalChosenDir = takeToken<ChosenToken>()->origin;
+                                    int localChosenDir = globalToLocalDir(globalChosenDir);
+                                    int localNbrDir = (localChosenDir + 3) % 6;
+                                    if (localNbrDir == dir_v) {
+                                        state = State::Leader;
+                                        stateStable = false;
+                                        return;
+                                    }
+                                }
+                            }
+                            else if (hasToken<NotChosenToken>()) {
+                                int globalChosenDir = takeToken<NotChosenToken>()->origin;
+                                int localChosenDir = globalToLocalDir(globalChosenDir);
+                                int localNbrDir = (localChosenDir + 3) % 6;
+                                if (localNbrDir == dir_v) {
+                                    state = State::Tree;
+                                    parent = dir;
+                                    int globalizedDir = localToGlobalDir(parent);
+                                    q.putToken(std::make_shared<ParentToken>(globalizedDir));
+                                    stateStable = false;
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+                else {
+                    // If both u and v are unoccupied, use movement.
+                    qDebug() << "Both unoccupied.";
+                    if (isContracted()) {
+                        qDebug() << "Contracted";
+                    }
+                    else {
+                        qDebug() << "Expanded";
+                    }
+                    
+                    if ((dir - dir_u + 6) % 6 == 1) {
+                        // Attempt to move to u.
+                        if (isContracted() && !hasMoved) {
+                            if (canExpand(dir_u) && !hasToken<YouAreEliminatedToken>()) {
+                                expand(dir_u);
+                            }
+                            else if (hasToken<YouAreEliminatedToken>()) {
+                                takeToken<YouAreEliminatedToken>();
+                                int globalizedDir = localToGlobalDir(dir);
+                                q.putToken(std::make_shared<IAmEliminatedToken>(globalizedDir));
+                                state = State::Tree;
+                                parent = dir;
+                                q.putToken(std::make_shared<ParentToken>(globalizedDir));
+                                stateStable = false;
+                                return;
+                            }
+                            else {
+                                // Not received eliminated token yet, wait...
+                                stateStable = true;
+                                return;
+                            }
+                        }
+                        else if (!isContracted() && !hasMoved) {
+                            qDebug() << "has moved";
+                            hasMoved = true;
+                            int globalizedDir;
+                            for (auto c : candidates) {
+                                globalizedDir = c;
+                                break;
+                            }
+                            globalizedDir = localToGlobalDir(globalizedDir);
+                            if (hasTailAtLabel(dir) || !hasNbrAtLabel(dir)) {
+                                // Same handedness
+                                qDebug() << "same handedness";
+                                sameHandedness = true;
+                                q.putToken(std::make_shared<SameHandednessToken>(globalizedDir));
+                                stateStable = true;
+                                return;
+                            }
+                            else {
+                                qDebug() << "eliminated";
+                                q.putToken(std::make_shared<YouAreEliminatedToken>(globalizedDir));
+                                stateStable = true;
+                                return;
+                            }
+                        }
+                        else if (hasMoved && !sameHandedness) {
+                            if (hasToken<IAmEliminatedToken>() && hasToken<ParentToken>()) {
+                                takeToken<IAmEliminatedToken>();
+                                takeToken<ParentToken>();
+                                children.insert(dir);
+                                contractHead();
+                                state = State::Leader;
+                                stateStable = false;
+                                return;
+                            }
+                        }
+                        else if (hasMoved && sameHandedness && !isContracted()) {
+                            if (hasToken<SameHandednessToken>()) {
+                                takeToken<SameHandednessToken>();
+                                contractHead();
+                                stateStable = true;
+                                return;
+                            }
+                        }
+                        else if (hasMoved && sameHandedness && isContracted()) {
+                            // Agreed on handedness with adjacent candidate.
+                            // Proceed to impose handedness on tree.
+                            // TODO ...
+
+                            qDebug() << "Agreed on handedness.";
+                        }
+                    }
+                    else {
+                        // Attempt to move to v.
+                        if (isContracted() && !hasMoved) {
+                            if (canExpand(dir_v) && !hasToken<YouAreEliminatedToken>()) {
+                                expand(dir_v);
+                            }
+                            else if (hasToken<YouAreEliminatedToken>()) {
+                                takeToken<YouAreEliminatedToken>();
+                                int globalizedDir = localToGlobalDir(dir);
+                                q.putToken(std::make_shared<IAmEliminatedToken>(globalizedDir));
+                                state = State::Tree;
+                                parent = dir;
+                                q.putToken(std::make_shared<ParentToken>(globalizedDir));
+                                stateStable = false;
+                                return;
+                            }
+                            else {
+                                // Not received eliminated token yet, wait...
+                                stateStable = true;
+                                return;
+                            }
+                        }
+                        else if (!isContracted() && !hasMoved) {
+                            qDebug() << "has moved.";
+                            hasMoved = true;
+                            int globalizedDir;
+                            for (auto c : candidates) {
+                                globalizedDir = c;
+                                break;
+                            }
+                            globalizedDir = localToGlobalDir(globalizedDir);
+                            if (hasTailAtLabel(dir) || !hasNbrAtLabel(dir)) {
+                                // Same handedness
+                                sameHandedness = true;
+                                q.putToken(std::make_shared<SameHandednessToken>(globalizedDir));
+                                stateStable = true;
+                                return;
+                            }
+                            else {
+                                q.putToken(std::make_shared<YouAreEliminatedToken>(globalizedDir));
+                                stateStable = true;
+                                return;
+                            }
+                        }
+                        else if (hasMoved && !sameHandedness) {
+                            if (hasToken<IAmEliminatedToken>() && hasToken<ParentToken>()) {
+                                takeToken<IAmEliminatedToken>();
+                                takeToken<ParentToken>();
+                                children.insert(dir);
+                                contractHead();
+                                state = State::Leader;
+                                stateStable = false;
+                                return;
+                            }
+                        }
+                        else if (hasMoved && sameHandedness && !isContracted()) {
+                            if (hasToken<SameHandednessToken>()) {
+                                takeToken<SameHandednessToken>();
+                                contractHead();
+                                stateStable = true;
+                                return;
+                            }
+                        }
+                        else if (hasMoved && sameHandedness && isContracted()) {
+                            // Agreed on handedness with adjacent candidate.
+                            // Proceed to impose handedness on tree.
+                            // TODO ...
+
+                            qDebug() << "Agreed on handedness.";
+                        }
+                    }
+                    stateStable = true;
+                    return;
+                }
             }
         }
         stateStable = true;
@@ -237,6 +582,57 @@ void LeaderElectionErosionParticle::activate() {
             if (treeIsDone()) {
                 treeDone = true;
             }
+        } // 3. Handedness agreement phase.
+        else {
+            // Either the 2 candidates have only this neighbour,
+            // Or they have different handedness.
+            // Choose one of them arbitrarily 
+            // (just pick the one with the lowest label)
+            if (countTokens<YouChooseToken>() == 2) {
+                int globalDirP = takeToken<YouChooseToken>()->origin;
+                int localDirP = globalToLocalDir(globalDirP);
+                int dir_p = (localDirP + 3) % 6;
+                LeaderElectionErosionParticle& p = nbrAtLabel(dir_p);
+
+                int globalDirQ = takeToken<YouChooseToken>()->origin;
+                int localDirQ = globalToLocalDir(globalDirQ);
+                int dir_q = (localDirQ + 3) % 6;
+                LeaderElectionErosionParticle& q = nbrAtLabel(dir_q);
+
+                for (int dir = 0; dir < 6; dir++) {
+                    if (dir == dir_p) {
+                        int globalizedDirP = localToGlobalDir(dir_p);
+                        p.putToken(std::make_shared<ChosenToken>(globalizedDirP));
+                        int globalizedDirQ = localToGlobalDir(dir_q);
+                        q.putToken(std::make_shared<NotChosenToken>(globalizedDirQ));
+                        break;
+                    }
+                    else if (dir == dir_q) {
+                        int globalizedDirQ = localToGlobalDir(dir_q);
+                        q.putToken(std::make_shared<ChosenToken>(globalizedDirQ));
+                        int globalizedDirP = localToGlobalDir(dir_p);
+                        p.putToken(std::make_shared<NotChosenToken>(globalizedDirP));
+                        break;
+                    }
+                }
+            } // 2 candidates have the same handedness.
+            else if (countTokens<YouChooseToken>() == 1 && countTokens<YouDoNotChooseToken>() == 1) {
+                int globalDirP = takeToken<YouChooseToken>()->origin;
+                int localDirP = globalToLocalDir(globalDirP);
+                int dir_p = (localDirP + 3) % 6;
+                LeaderElectionErosionParticle& p = nbrAtLabel(dir_p);
+
+                int globalDirQ = takeToken<YouDoNotChooseToken>()->origin;
+                int localDirQ = globalToLocalDir(globalDirQ);
+                int dir_q = (localDirQ + 3) % 6;
+                LeaderElectionErosionParticle& q = nbrAtLabel(dir_q);
+
+                int globalizedDirP = localToGlobalDir(dir_p);
+                p.putToken(std::make_shared<SameHandednessToken>(globalizedDirP));
+
+                int globalizedDirQ = localToGlobalDir(dir_q);
+                q.putToken(std::make_shared<SameHandednessToken>(globalizedDirQ));
+            }
         }
         stateStable = true;
         return;
@@ -245,6 +641,29 @@ void LeaderElectionErosionParticle::activate() {
         stateStable = true;
         return;
     }
+}
+
+int LeaderElectionErosionParticle::getNumCandidates() {
+    int num = 0;
+    for (int dir = 0; dir < 6; dir++) {
+        if (hasNbrAtLabel(dir)) {
+            LeaderElectionErosionParticle& nbr = nbrAtLabel(dir);
+            if (nbr.state == State::Candidate || nbr.state == State::Root) {
+                if (nbr.isContracted()) {
+                    candidates.insert(dir);
+                }
+                else {
+                    if (hasTailAtLabel(dir)) {
+                        candidates.insert(dir);
+                    }
+                }
+                if (hasHeadAtLabel(dir)) {
+                    num = num + 1;
+                }
+            }
+        }
+    }
+    return num;
 }
 
 bool LeaderElectionErosionParticle::treeIsDone() const {
