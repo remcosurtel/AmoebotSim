@@ -58,6 +58,8 @@ public:
 
     int numNbrsCandidate = -1;
 
+    bool notChosen = false;
+
     // Constructs a new particle with a node position for its head, a global
     // compass direction from its head to its tail (-1 if contracted), an offset
     // for its local compass, and a system which it belongs to.

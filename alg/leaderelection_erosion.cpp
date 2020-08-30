@@ -199,12 +199,10 @@ void LeaderElectionErosionParticle::activate() {
             // 3. Handedness agreement phase.
             // Candidate leaders (roots) agree on handedness first.
             // Process then proceeds through the forest from parents to children.
-            qDebug() << "Particle: " << this->head.x << ", " << this->head.y;
 
             if (numCandidates == 0) {
                 numCandidates = getNumCandidates();
             }
-            qDebug() << "Adjacent candidates: " << numCandidates;
 
             if (numCandidates == 1) {
                 // If there is 1 adjacent candidate (i.e. there are 2 candidates),
@@ -221,11 +219,7 @@ void LeaderElectionErosionParticle::activate() {
                     dir = dirToTailLabel(dir);
                 }
 
-                qDebug() << "Getting neighbour at dir:" << dir;
-
                 LeaderElectionErosionParticle& q = nbrAtLabel(dir);
-
-                qDebug() << "Success.";
 
                 int dir_u = (dir + 5) % 6;
                 int dir_v = (dir + 1) % 6;
@@ -244,10 +238,8 @@ void LeaderElectionErosionParticle::activate() {
                     }
                 }
 
-                qDebug() << "Non-candidate neighbours: " << numNbrsCandidate;
-
                 updateStability();
-                qDebug() << "Stable: " << stable;
+
                 if (!stable) {
                     stateStable = true;
                     return;
@@ -381,14 +373,6 @@ void LeaderElectionErosionParticle::activate() {
                 }
                 else {
                     // If both u and v are unoccupied, use movement.
-                    qDebug() << "Both unoccupied.";
-                    if (isContracted()) {
-                        qDebug() << "Contracted";
-                    }
-                    else {
-                        qDebug() << "Expanded";
-                    }
-                    
                     if ((dir - dir_u + 6) % 6 == 1) {
                         // Attempt to move to u.
                         if (isContracted() && !hasMoved) {
@@ -412,7 +396,6 @@ void LeaderElectionErosionParticle::activate() {
                             }
                         }
                         else if (!isContracted() && !hasMoved) {
-                            qDebug() << "has moved";
                             hasMoved = true;
                             int globalizedDir;
                             for (auto c : candidates) {
@@ -422,14 +405,12 @@ void LeaderElectionErosionParticle::activate() {
                             globalizedDir = localToGlobalDir(globalizedDir);
                             if (hasTailAtLabel(dir) || !hasNbrAtLabel(dir)) {
                                 // Same handedness
-                                qDebug() << "same handedness";
                                 sameHandedness = true;
                                 q.putToken(std::make_shared<SameHandednessToken>(globalizedDir));
                                 stateStable = true;
                                 return;
                             }
                             else {
-                                qDebug() << "eliminated";
                                 q.putToken(std::make_shared<YouAreEliminatedToken>(globalizedDir));
                                 stateStable = true;
                                 return;
@@ -485,7 +466,6 @@ void LeaderElectionErosionParticle::activate() {
                             }
                         }
                         else if (!isContracted() && !hasMoved) {
-                            qDebug() << "has moved.";
                             hasMoved = true;
                             int globalizedDir;
                             for (auto c : candidates) {
@@ -536,6 +516,100 @@ void LeaderElectionErosionParticle::activate() {
                     stateStable = true;
                     return;
                 }
+            }
+            else if (numCandidates == 2) {
+                // If there are 2 adjacent candidates (i.e. there are 3 candidates),
+                // Call the other 2 candidates q and r.
+                // Either 1 candidate has unique handedness and becomes the leader,
+                // Or all 3 candidates have the same handedness and will impose
+                // this handedness on their trees.
+
+                int dir_q = -1;
+                int dir_r;
+                for (auto c : candidates) {
+                    if (dir_q == -1) {
+                        dir_q = c;
+                    }
+                    else {
+                        dir_r = c;
+                        break;
+                    }
+                }
+
+                LeaderElectionErosionParticle& q = nbrAtLabel(dir_q);
+                LeaderElectionErosionParticle& r = nbrAtLabel(dir_r);
+
+                int globalizedDirQ = localToGlobalDir(dir_q);
+                int globalizedDirR = localToGlobalDir(dir_r);
+
+                // If not chosen yet, choose one of the other candidates based on handedness.
+                if (!chooseTokenSent) {
+                    // choose q
+                    if (dir_r == (dir_q + 1) % 6) {
+                        q.putToken(std::make_shared<ChosenToken>(globalizedDirQ));
+                        r.putToken(std::make_shared<NotChosenToken>(globalizedDirR));
+                        chooseTokenSent = true;
+                    } // choose r
+                    else {
+                        q.putToken(std::make_shared<NotChosenToken>(globalizedDirQ));
+                        r.putToken(std::make_shared<ChosenToken>(globalizedDirR));
+                        chooseTokenSent = true;
+                    }
+                }
+
+                // If chosen twice, eliminate other candidates.
+                if (countTokens<ChosenToken>() == 2) {
+                    takeToken<ChosenToken>();
+                    takeToken<ChosenToken>();
+                    q.putToken(std::make_shared<YouAreEliminatedToken>(globalizedDirQ));
+                    r.putToken(std::make_shared<YouAreEliminatedToken>(globalizedDirR));
+
+                    sameHandedness = true;
+
+                    state = State::Leader;
+                    stateStable = false;
+                    return;
+                }
+                // If chosen once and not chosen once, handedness is the same.
+                else if (countTokens<ChosenToken>() == 1 && countTokens<NotChosenToken>() == 1) {
+                    takeToken<ChosenToken>();
+                    takeToken<NotChosenToken>();
+                    q.putToken(std::make_shared<IAmEliminatedToken>(globalizedDirQ));
+                    r.putToken(std::make_shared<IAmEliminatedToken>(globalizedDirR));
+                    notChosen = true;
+                }
+
+                // If eliminated, revoke candidacy and become child node of leader.
+                if (hasToken<YouAreEliminatedToken>()) {
+                    int globalLeaderDir = takeToken<YouAreEliminatedToken>()->origin;
+                    int localLeaderDir = globalToLocalDir(globalLeaderDir);
+                    int localNbrDir = (localLeaderDir + 3) % 6;
+
+                    state = State::Tree;
+                    parent = localNbrDir;
+                    int globalizedDir = localToGlobalDir(parent);
+                    LeaderElectionErosionParticle& l = nbrAtLabel(parent);
+                    l.putToken(std::make_shared<ParentToken>(globalizedDir));
+                    stateStable = false;
+                    return;
+                }
+                // If no one was chosen, handedness is the same
+                else if (countTokens<IAmEliminatedToken>() == 2 && notChosen) {
+                    takeToken<IAmEliminatedToken>();
+                    takeToken<IAmEliminatedToken>();
+                    sameHandedness = true;
+                }
+
+                if (sameHandedness) {
+                    // Agreed on handedness with adjacent candidates.
+                    // Proceed to impose handedness on tree.
+                    // TODO ...
+
+                    qDebug() << "Agreed on handedness.";
+                }
+
+                stateStable = true;
+                return;
             }
         }
         stateStable = true;
