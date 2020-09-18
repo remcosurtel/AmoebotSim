@@ -204,6 +204,19 @@ void LeaderElectionErosionParticle::activate() {
                 numCandidates = getNumCandidates();
             }
 
+            if (sameHandedness) {
+                updateStability();
+
+                if (!stable) {
+                    stateStable = true;
+                    return;
+                }
+
+                state = State::RootElection;
+                stateStable = false;
+                return;
+            }
+
             if (numCandidates == 1) {
                 // If there is 1 adjacent candidate (i.e. there are 2 candidates),
                 // Let this particle be p, and call the other candidate q.
@@ -283,6 +296,10 @@ void LeaderElectionErosionParticle::activate() {
                         // TODO ...
 
                         qDebug() << "Agreed on handedness.";
+
+                        state = State::RootElection;
+                        stateStable = false;
+                        return;
 
                     }
                     stateStable = true;
@@ -441,6 +458,10 @@ void LeaderElectionErosionParticle::activate() {
                             // TODO ...
 
                             qDebug() << "Agreed on handedness.";
+
+                            state = State::RootElection;
+                            stateStable = false;
+                            return;
                         }
                     }
                     else {
@@ -511,6 +532,10 @@ void LeaderElectionErosionParticle::activate() {
                             // TODO ...
 
                             qDebug() << "Agreed on handedness.";
+
+                            state = State::RootElection;
+                            stateStable = false;
+                            return;
                         }
                     }
                     stateStable = true;
@@ -606,6 +631,10 @@ void LeaderElectionErosionParticle::activate() {
                     // TODO ...
 
                     qDebug() << "Agreed on handedness.";
+
+                    state = State::RootElection;
+                    stateStable = false;
+                    return;
                 }
 
                 stateStable = true;
@@ -656,8 +685,9 @@ void LeaderElectionErosionParticle::activate() {
             if (treeIsDone()) {
                 treeDone = true;
             }
-        } // 3. Handedness agreement phase.
+        }
         else {
+            // 3. Handedness agreement phase.
             // Either the 2 candidates have only this neighbour,
             // Or they have different handedness.
             // Choose one of them arbitrarily 
@@ -707,9 +737,301 @@ void LeaderElectionErosionParticle::activate() {
                 int globalizedDirQ = localToGlobalDir(dir_q);
                 q.putToken(std::make_shared<SameHandednessToken>(globalizedDirQ));
             }
+
+            // 4. Leader election phase
+            // Participate in the fetching of neighbourhood encodings from the subtree.
+
+            // If encoding requested by parent
+            if (hasToken<RequestEncodingToken>()) {
+                // If not own encoding sent
+                if (!nbrhdEncodingSent) {
+                    // Send neighbourhood encoding
+                    string encoding = getNeighbourhoodEncoding();
+
+                    sendEncodingParent(encoding);
+                    nbrhdEncodingSent = true;
+
+                    takeToken<RequestEncodingToken>();
+
+                    stateStable = true;
+                    return;
+                }
+                // If own encoding sent
+                else {
+                    // If not encoding rquested
+                    if (!sentEncodingRequest) {
+                        // Request encoding from child
+                        // Starting from parent, loop through children in clockwise order
+                        int childDir = (parent + 1) % 6;
+                        while (children.find(childDir) == children.end() || childrenExhausted.find(childDir) != childrenExhausted.end()) {
+                            childDir = (childDir + 1) % 6;
+                            if (childDir == parent) {
+                                break;
+                            }
+                        }
+                        if (childDir == parent) {
+                            // Tree exhausted
+                            treeExhausted = true;
+
+                            sendExhaustedToken(parent);
+
+                            stateStable = true;
+                            return;
+                        }
+                        else {
+                            // Request encoding from child
+                            LeaderElectionErosionParticle& nbr = nbrAtLabel(childDir);
+                            int globalizedDir = localToGlobalDir(childDir);
+
+                            nbr.putToken(std::make_shared<RequestEncodingToken>(globalizedDir));
+                            sentEncodingRequest = true;
+
+                            stateStable = true;
+                            return;
+                        }
+                    }
+                    // If encoding requested
+                    else {
+                        // If encoding received
+                        if (hasToken<EncodingToken>()) {
+                            // Take token and forward encoding
+                            std::shared_ptr<EncodingToken> token = peekAtToken<EncodingToken>();
+                            string encoding = token->encoding;
+                            takeToken<EncodingToken>();
+
+                            sendEncodingParent(encoding);
+                            takeToken<RequestEncodingToken>();
+
+                            stateStable = true;
+                            return;
+                        }
+                        // If child's subtree is exhausted
+                        else if (hasToken<SubTreeExhaustedToken>()) {
+                            // Add child to exhausted list and request encoding from next child
+                            int globalDir = takeToken<SubTreeExhaustedToken>()->origin;
+                            int localDir = (globalToLocalDir(globalDir) + 3) % 6;
+
+                            childrenExhausted.insert(localDir);
+
+                            sentEncodingRequest = false;
+
+                            stateStable = true;
+                            return;
+                        }
+                        // If no tokens received yet, wait
+                        stateStable = true;
+                        return;
+                    }
+                }
+            }
         }
         stateStable = true;
         return;
+    }
+    else if (state == State::RootElection) {
+        // 4. Leader election phase
+        // Query subtrees for neighbourhood encodings of particles.
+        // Compare these neighbourhood encodings to attempt to break symmetry.
+
+        if (!nbrhdEncodingSent) {
+            // first step: send own neighbourhood encoding
+            string encoding = getNeighbourhoodEncoding();
+
+            currentEncoding = encoding;
+
+            sendEncodingCandidates(encoding);
+            nbrhdEncodingSent = true;
+            encodingSent = true;
+
+            stateStable = true;
+            return;
+        }
+
+        if (sentEncodingRequest) {
+            if (hasToken<EncodingToken>()) {
+                // Receive encoding token, set encoding and send it
+                std::shared_ptr<EncodingToken> token = peekAtToken<EncodingToken>();
+                int globalDir = token->origin;
+                string encoding = token->encoding;
+                takeToken<EncodingToken>();
+
+                currentEncoding = encoding;
+                sendEncodingCandidates(encoding);
+                encodingSent = true;
+
+                stateStable = true;
+                return;
+            }
+            else if (hasToken<SubTreeExhaustedToken>()) {
+                // Child's subtree exhausted, add child to exhausted list
+                // and send new encoding request
+                int globalDir = takeToken<SubTreeExhaustedToken>()->origin;
+                int localDir = (globalToLocalDir(globalDir) + 3) % 6;
+
+                childrenExhausted.insert(localDir);
+
+                sentEncodingRequest = false;
+
+                stateStable = true;
+                return;
+            }
+            stateStable = true;
+            return;
+        }
+
+        if (encodingSent) {
+            // Wait for tokens and then compare
+
+            if (!(countTokens<EncodingTokenCandidate>() == numCandidates)) {
+                stateStable = true;
+                return;
+            }
+
+            if (numCandidates == 1) {
+                std::shared_ptr<EncodingTokenCandidate> token = takeToken<EncodingTokenCandidate>();
+                int globalDir = token->origin;
+                string encoding = token->encoding;
+
+                if (currentEncoding < encoding) {
+                    // Lexicographically smaller -> become leader
+                    state = State::Leader;
+                    stateStable = false;
+                    return;
+                }
+                else if (currentEncoding > encoding) {
+                    // Lexicographically larger -> revoke candidacy
+                    state = State::Tree;
+                    parent = (globalToLocalDir(globalDir) + 3) % 6;
+                    int globalizedDir = localToGlobalDir(parent);
+                    LeaderElectionErosionParticle& nbr = nbrAtLabel(parent);
+                    nbr.putToken(std::make_shared<ParentToken>(globalizedDir));
+                    stateStable = false;
+                    return;
+                }
+                else {
+                    // Lexicographically equal -> get next encoding...
+                    encodingSent = false;
+                    stateStable = true;
+                    return;
+                }
+            }
+            else if (numCandidates == 2) {
+
+                std::shared_ptr<EncodingTokenCandidate> tokenA = peekAtToken<EncodingTokenCandidate>();
+                int globalDirA = tokenA->origin;
+                string encodingA = tokenA->encoding;
+                takeToken<EncodingTokenCandidate>();
+
+                std::shared_ptr<EncodingTokenCandidate> tokenB = peekAtToken<EncodingTokenCandidate>();
+                int globalDirB = tokenB->origin;
+                string encodingB = tokenB->encoding;
+                takeToken<EncodingTokenCandidate>();
+
+                if (currentEncoding < encodingA && currentEncoding < encodingB) {
+                    // Lexicographically smallest -> become leader
+                    state = State::Leader;
+                    stateStable = false;
+                    return;
+                }
+                else if (encodingA < currentEncoding && encodingA < encodingB) {
+                    // encoding A is smallest -> A becomes the leader
+                    state = State::Tree;
+                    parent = (globalToLocalDir(globalDirA) + 3) % 6;
+                    int globalizedDir = localToGlobalDir(parent);
+                    LeaderElectionErosionParticle& nbr = nbrAtLabel(parent);
+                    nbr.putToken(std::make_shared<ParentToken>(globalizedDir));
+                    stateStable = false;
+                    return;
+                }
+                else if (encodingB < currentEncoding && encodingB < encodingA) {
+                    // encoding B is smallest -> B becomes the leader
+                    state = State::Tree;
+                    parent = (globalToLocalDir(globalDirB) + 3) % 6;
+                    int globalizedDir = localToGlobalDir(parent);
+                    LeaderElectionErosionParticle& nbr = nbrAtLabel(parent);
+                    nbr.putToken(std::make_shared<ParentToken>(globalizedDir));
+                    stateStable = false;
+                    return;
+                }
+                // There is no unique lexicographically smallest encoding
+                // Check if there is a unique lexicographically largest encoding...
+                else if (currentEncoding > encodingA && currentEncoding > encodingB) {
+                    // Lexicographically largest -> become leader
+                    state = State::Leader;
+                    stateStable = false;
+                    return;
+                }
+                else if (encodingA > currentEncoding && encodingA > encodingB) {
+                    // encoding A is largest -> A becomes leader
+                    state = State::Tree;
+                    parent = (globalToLocalDir(globalDirA) + 3) % 6;
+                    int globalizedDir = localToGlobalDir(parent);
+                    LeaderElectionErosionParticle& nbr = nbrAtLabel(parent);
+                    nbr.putToken(std::make_shared<ParentToken>(globalizedDir));
+                    stateStable = false;
+                    return;
+                }
+                else if (encodingB > currentEncoding && encodingB > encodingA) {
+                    // encoding B is largest -> B becomes leader
+                    state = State::Tree;
+                    parent = (globalToLocalDir(globalDirB) + 3) % 6;
+                    int globalizedDir = localToGlobalDir(parent);
+                    LeaderElectionErosionParticle& nbr = nbrAtLabel(parent);
+                    nbr.putToken(std::make_shared<ParentToken>(globalizedDir));
+                    stateStable = false;
+                    return;
+                }
+                else {
+                    // Encodings are equal, move on...
+                    encodingSent = false;
+                    stateStable = true;
+                    return;
+                }
+            }
+            stateStable = true;
+            return;
+        }
+
+        // If some candidates have not yet processed their tokens, wait.
+        for (int dir : candidates) {
+            LeaderElectionErosionParticle& nbr = nbrAtLabel(dir);
+            if (nbr.countTokens<EncodingTokenCandidate>() == numCandidates) {
+                stateStable = true;
+                return;
+            }
+        }
+
+        // Loop through children in direction of increasing labels.
+        // Starting from the direction of the adjacent candidate(s).
+        int candidateDir = -1;
+        for (int c : candidates) {
+            candidateDir = c;
+        }
+
+        int childDir = (candidateDir + 1) % 6;
+        while (children.find(childDir) == children.end() || childrenExhausted.find(childDir) != childrenExhausted.end()) {
+            childDir = (childDir + 1) % 6;
+            if (childDir == candidateDir) {
+                break;
+            }
+        }
+
+        if (childDir == candidateDir) {
+            // Tree exhausted -> unbreakable symmetry by theorem 6
+            // Become leader (1 of multiple leaders, algorithm fails)
+            state = State::Leader;
+            stateStable = false;
+            return;
+        }
+        else {
+            // Request encoding from child
+            LeaderElectionErosionParticle& nbr = nbrAtLabel(childDir);
+            int globalizedDir = localToGlobalDir(childDir);
+            nbr.putToken(std::make_shared<RequestEncodingToken>(globalizedDir));
+            sentEncodingRequest = true;
+            stateStable = true;
+            return;
+        }
     }
     else {
         stateStable = true;
@@ -717,12 +1039,57 @@ void LeaderElectionErosionParticle::activate() {
     }
 }
 
+void LeaderElectionErosionParticle::sendExhaustedToken(int dir) {
+    LeaderElectionErosionParticle& nbr = nbrAtLabel(dir);
+    int globalizedDir = localToGlobalDir(dir);
+    nbr.putToken(std::make_shared<SubTreeExhaustedToken>(globalizedDir));
+}
+
+void LeaderElectionErosionParticle::sendEncodingParent(string encoding) {
+    LeaderElectionErosionParticle& nbr = nbrAtLabel(parent);
+    int globalizedDir = localToGlobalDir(parent);
+    nbr.putToken(std::make_shared<EncodingToken>(globalizedDir, encoding));
+}
+
+void LeaderElectionErosionParticle::sendEncodingCandidates(string encoding) {
+    for (auto dir : candidates) {
+        LeaderElectionErosionParticle& nbr = nbrAtLabel(dir);
+        int globalizedDir = localToGlobalDir(dir);
+        nbr.putToken(std::make_shared<EncodingTokenCandidate>(globalizedDir, encoding));
+    }
+}
+
+string LeaderElectionErosionParticle::getNeighbourhoodEncoding() {
+    string result = "";
+    for (int dir = 0; dir < 6; ++dir) {
+        if (hasNbrAtLabel(dir)) {
+            LeaderElectionErosionParticle& nbr = nbrAtLabel(dir);
+            if (nbr.state == State::Candidate || nbr.state == State::Root || nbr.state == State::RootElection) {
+                result = result + "L";
+            }
+            else if (dir == parent) {
+                result = result + "P";
+            }
+            else if (children.find(dir) != children.end()) {
+                result = result + "C";
+            }
+            else {
+                result = result + "N";
+            }
+        }
+        else {
+            result = result + "N";
+        }
+    }
+    return result;
+}
+
 int LeaderElectionErosionParticle::getNumCandidates() {
     int num = 0;
     for (int dir = 0; dir < 6; dir++) {
         if (hasNbrAtLabel(dir)) {
             LeaderElectionErosionParticle& nbr = nbrAtLabel(dir);
-            if (nbr.state == State::Candidate || nbr.state == State::Root) {
+            if (nbr.state == State::Candidate || nbr.state == State::Root || nbr.state == State::RootElection) {
                 if (nbr.isContracted()) {
                     candidates.insert(dir);
                 }
@@ -749,7 +1116,7 @@ bool LeaderElectionErosionParticle::treeIsDone() const {
                     return false;
                 }
             }
-            else if (nbr.state != State::Tree && nbr.state != State::Root){
+            else if (nbr.state != State::Tree && nbr.state != State::Root && nbr.state != State::RootElection){
                 return false;
             }
         }
@@ -856,9 +1223,20 @@ int LeaderElectionErosionParticle::headMarkColor() const {
         }
         return 0xc46200;
     }
+    else if (state == State::RootElection) {
+        return 0xff00ff;
+    }
     else if (state == State::Tree) {
         if (treeDone) {
-            return 0x006100;
+            if (treeExhausted) {
+                return 0x000000;
+            }
+            else if (nbrhdEncodingSent) {
+                return 0x868686;
+            }
+            else {
+                return 0x006100;
+            }
         }
         return 0x00b000;
     }

@@ -28,6 +28,7 @@ public:
         Eroded,
         Root,
         Tree,
+        RootElection,
         Leader,
         Finished
     };
@@ -37,6 +38,18 @@ public:
     int parent;
 
     set <int> children;
+
+    string currentEncoding = "";
+
+    bool nbrhdEncodingSent = false;
+
+    bool encodingSent = false;
+
+    bool sentEncodingRequest = false;
+
+    bool treeExhausted = false;
+
+    set <int> childrenExhausted;
 
     int cornerType;
 
@@ -52,7 +65,7 @@ public:
 
     set <int> candidates;
 
-    bool sameHandedness = false;
+    bool sameHandedness = true;
 
     bool hasMoved = false;
 
@@ -109,6 +122,14 @@ public:
     // Note that particles in state 'Root' are also candidates.
     int getNumCandidates();
 
+    string getNeighbourhoodEncoding();
+
+    void sendEncodingCandidates(string encoding);
+
+    void sendEncodingParent(string encoding);
+
+    void sendExhaustedToken(int dir);
+
 protected:
     // The LeaderElectionToken struct provides a general framework of any token
     // under the General Leader Election algorithm.
@@ -158,6 +179,30 @@ protected:
     };
     struct YouAreEliminatedToken : public LeaderElectionToken {
         YouAreEliminatedToken(int origin = -1) {
+            this->origin = origin;
+        }
+    };
+    struct EncodingTokenCandidate : public LeaderElectionToken {
+        string encoding;
+        EncodingTokenCandidate(int origin = -1, string encoding = "") {
+            this->origin = origin;
+            this->encoding = encoding;
+        }
+    };
+    struct RequestEncodingToken : public LeaderElectionToken {
+        RequestEncodingToken(int origin = -1) {
+            this->origin = origin;
+        }
+    };
+    struct EncodingToken : public LeaderElectionToken {
+        string encoding;
+        EncodingToken(int origin = -1, string encoding = "") {
+            this->origin = origin;
+            this->encoding = encoding;
+        }
+    };
+    struct SubTreeExhaustedToken : public LeaderElectionToken {
+        SubTreeExhaustedToken(int origin = -1) {
             this->origin = origin;
         }
     };
