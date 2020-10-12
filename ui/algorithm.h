@@ -136,6 +136,17 @@ public slots:
     void instantiate(const int numParticles = 100);
 };
 
+// Stationary Deterministic Leader Election.
+class LeaderElectionStationaryDeterministicAlg : public Algorithm {
+    Q_OBJECT
+
+public:
+    LeaderElectionStationaryDeterministicAlg();
+
+public slots:
+    void instantiate(const int numParticles = 100);
+};
+
 // Basic Shape Formation.
 class ShapeFormationAlg : public Algorithm {
   Q_OBJECT

@@ -12,3 +12,4 @@ docs/build/*
 .vs/AmoebotSim/v16/ipch/AutoPCH/bce08916114351f5/INFOBJCOATING.ipch
 *.ipch
 .vscode/c_cpp_properties.json
+.vscode/settings.json

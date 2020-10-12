@@ -35,7 +35,8 @@ HEADERS += \
     ui/view.h \
     ui/visitem.h \
     alg/leaderelection.h \
-	alg/leaderelection_erosion.h
+	alg/leaderelection_erosion.h \
+  alg/leaderelection_stationary_deterministic.h
 
 SOURCES += \
     alg/demo/ballroomdemo.cpp \
@@ -64,7 +65,8 @@ SOURCES += \
     ui/view.cpp \
     ui/visitem.cpp \
     alg/leaderelection.cpp \
-	alg/leaderelection_erosion.cpp
+	alg/leaderelection_erosion.cpp \
+  alg/leaderelection_stationary_deterministic.cpp
 
 RESOURCES += \
     res/qml.qrc \

@@ -13,6 +13,7 @@
 #include "alg/leaderelection.h"
 #include "alg/shapeformation.h"
 #include "alg/leaderelection_erosion.h"
+#include "alg/leaderelection_stationary_deterministic.h"
 
 Algorithm::Algorithm(QString name, QString signature)
     : _name(name),
@@ -172,6 +173,20 @@ void LeaderElectionErosionAlg::instantiate(const int numParticles) {
     }
 }
 
+LeaderElectionStationaryDeterministicAlg::LeaderElectionStationaryDeterministicAlg() :
+    Algorithm("Stationary Deterministic Leader Election", "leaderelection_stationary_deterministic") {
+    addParameter("# Particles", "100");
+}
+
+void LeaderElectionStationaryDeterministicAlg::instantiate(const int numParticles) {
+    if (numParticles <= 0) {
+        emit log("# particles must be > 0", true);
+    }
+    else {
+        emit setSystem(std::make_shared<LeaderElectionStationaryDeterministicSystem>(numParticles));
+    }
+}
+
 ShapeFormationAlg::ShapeFormationAlg() :
   Algorithm("Basic Shape Formation", "shapeformation") {
   addParameter("# Particles", "200");
@@ -211,6 +226,7 @@ AlgorithmList::AlgorithmList() {
   _algorithms.push_back(new InfObjCoatingAlg());    
   _algorithms.push_back(new LeaderElectionAlg());
   _algorithms.push_back(new LeaderElectionErosionAlg());
+  _algorithms.push_back(new LeaderElectionStationaryDeterministicAlg());
   _algorithms.push_back(new ShapeFormationAlg());
 }
 
