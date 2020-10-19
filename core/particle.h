@@ -48,6 +48,10 @@ class Particle {
   virtual std::array<int, 18> borderColors() const;
   virtual std::array<int, 6> borderPointColors() const;
 
+  // Just like borderPointColors, except these points are drawn in between the edges
+  // connecting the particles, instead of on the edges.
+  virtual std::array<int, 6> borderPointBetweenEdgeColors() const;
+
   // Returns the string to be displayed when this particle is inspected; used
   // to snapshot the current values of this particle's memory at runtime.
   virtual QString inspectionText() const;

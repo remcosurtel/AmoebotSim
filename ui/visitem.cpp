@@ -235,6 +235,18 @@ void VisItem::drawBorderPoints(const Particle& p) {
       drawFromParticleTex(i + 15, pos);
     }
   }
+  // Approximate offsets used to draw points in the center of a triangle of the grid.
+  float xOffsets[6] = {0, -0.25, -0.25, 0, 0.25, 0.25};
+  float yOffsets[6] = {0.3, 0.15, -0.15, -0.3, -0.15, 0.15};
+  // Draw points in the center of triangles in the grid.
+  for (unsigned int i = 0; i < p.borderPointBetweenEdgeColors().size(); ++i) {
+    auto pos = QPointF(p.head.x + 0.5 * p.head.y + xOffsets[i], p.head.y * triangleHeight + yOffsets[i]);
+    if (p.borderPointBetweenEdgeColors().at(i) != -1) {
+      auto color = p.borderPointBetweenEdgeColors().at(i);
+      glfn->glColor4i(qRed(color) << 23, qGreen(color) << 23, qBlue(color) << 23, 180 << 23);
+      drawFromParticleTex(i + 15, pos);
+    }
+  }
 }
 
 void VisItem::drawFromParticleTex(int index, const QPointF& pos) {
