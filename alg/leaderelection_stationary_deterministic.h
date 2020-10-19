@@ -71,6 +71,8 @@ public:
   // particle to draw the boundaries for leader election.
   virtual std::array<int, 18> borderColors() const;
   virtual std::array<int, 6> borderPointColors() const;
+  // Draw points in between the edges connecting particles.
+  virtual std::array<int, 6> borderPointBetweenEdgeColors() const;
 
   // Returns the label associated with the direction which the next (resp.
   // previous) node is according to the cycle that the node is on (which is
@@ -90,19 +92,56 @@ protected:
     // origin is used to define the direction (label) that a LeaderElectionToken
     // was received from.
     int origin;
+    int destination;
   };
 
   // Used in stretch expansion to request a merge.
   struct MergeRequestToken : public LeaderElectionToken {
-    MergeRequestToken(int origin = -1) { this->origin = origin; }
+    MergeRequestToken(int origin = -1, int destination = -1) { this->origin = origin; this->destination = destination;}
   };
   // Used in stretch expansion to acknowledge a merge.
   struct MergeAckToken : public LeaderElectionToken {
-    MergeAckToken(int origin = -1) { this->origin = origin; }
+    MergeAckToken(int origin = -1, int destination = -1) { this->origin = origin; this->destination = destination;}
   };
   // Used in stretch expansion to decline a merge.
   struct MergeNackToken : public LeaderElectionToken {
-    MergeNackToken(int origin = -1) { this->origin = origin; }
+    MergeNackToken(int origin = -1, int destination = -1) { this->origin = origin; this->destination = destination;}
+  };
+  // Used to send the stretch count from the head to the tail node.
+  struct CountToken : public LeaderElectionToken {
+    int value;
+    CountToken(int origin = -1, int value = 0, int destination = -1) {
+      this->origin = origin;
+      this->destination = destination;
+      this->value = value;
+    }
+  };
+  // Used to send the adjacent stretch count from the tail back to the head node.
+  struct CountReturnToken : public LeaderElectionToken {
+    int value;
+    CountReturnToken(int origin = -1, int value = 0, int destination = -1) {
+      this->origin = origin;
+      this->destination = destination;
+      this->value = value;
+    }
+  };
+  // Used to attempt merge requests from stretches larger than 1.
+  struct AttemptMergeToken : public LeaderElectionToken {
+    int value;
+    AttemptMergeToken(int origin = -1, int value = 0, int destination = -1) {
+      this->origin = origin;
+      this->destination = destination;
+      this->value = value;
+    }
+  };
+  // Used to merge stretches larger than 1 and send the count to the head.
+  struct MergeCountToken : public LeaderElectionToken {
+    int value;
+    MergeCountToken(int origin = -1, int value = 0, int destination = -1) {
+      this->origin = origin;
+      this->destination = destination;
+      this->value = value;
+    }
   };
 
  private:
@@ -126,6 +165,10 @@ protected:
      * node on this node's boundary is in local direction nextnodeDir
      * (respectively, prevnodeDir). -1 if next node is on this particle. */
     int nodeDir, nextNodeDir, prevNodeDir;
+
+    bool nextNodeClone = false; 
+    bool prevNodeClone = false;
+    bool cloneChange = false;
 
     State nodeState;
     SubPhase subPhase;
@@ -156,6 +199,9 @@ protected:
     LeaderElectionNode* predecessor = nullptr;
     LeaderElectionNode* successor = nullptr;
 
+    // Used to remember that the count has been sent to the tail node.
+    bool countSent = false;
+
     // Executes one node activation.
     virtual void activate();
 
@@ -165,21 +211,22 @@ protected:
     // Methods for passing, taking, and checking the ownership of tokens at the
     // node level
     template <class TokenType>
-    bool hasNodeToken(int dir) const;
+    bool hasNodeToken(int dir, bool checkClone=true) const;
     template <class TokenType>
     std::shared_ptr<TokenType> peekNodeToken(int dir) const;
     template <class TokenType>
-    std::shared_ptr<TokenType> takeNodeToken(int dir);
+    std::shared_ptr<TokenType> takeNodeToken(int dir, bool checkClone=true);
     template <class TokenType>
-    void passNodeToken(int dir, std::shared_ptr<TokenType> token);
-    LeaderElectionNode* nextNode() const;
-    LeaderElectionNode* prevNode() const;
+    void passNodeToken(int dir, std::shared_ptr<TokenType> token, bool checkClone=true);
+    LeaderElectionNode* nextNode(bool recursion=false) const;
+    LeaderElectionNode* prevNode(bool recursion=false) const;
   };
 
   protected:
    std::vector<LeaderElectionNode*> nodes;
    std::array<int, 18> borderColorLabels;
    std::array<int, 6> borderPointColorLabels;
+   std::array<int, 6> borderPointBetweenEdgeColorLabels;
 };
 
 class LeaderElectionStationaryDeterministicSystem : public AmoebotSystem {
