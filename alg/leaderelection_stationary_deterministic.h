@@ -143,6 +143,141 @@ protected:
       this->value = value;
     }
   };
+  // Used to attempt merge requests as a result of lexicographic comparison.
+  struct LexCompAttemptMergeToken : public LeaderElectionToken {
+    int value;
+    LexCompAttemptMergeToken(int origin = -1, int value = 0, int destination = -1) {
+      this->origin = origin;
+      this->destination = destination;
+      this->value = value;
+    }
+  };
+  /*
+   * Lexicographic comparison tokens
+   * 
+   * LexCompInitToken : signals to clockwise adjacent stretch to initialize lexicographic comparison
+   * LexCompAckToken : signals to counter-clockwise adjacent stretch that lexicographic comparison is initialized
+   * LexCompNackToken : signals that counts are no longer equal; a merge has happened -> no lexicographic comparison
+   * LexCompReqStretchLabelToken : request the next label from the clockwise adjacent stretch
+   * LexCompReturnStretchLabelToken : returns the label of the next node to the counter-clockwise adjacent stretch
+   * LexCompEndOfNbrStretchToken : signals to the initiating stretch that its adjacent stretch has exhausted all its labels
+   * LexCompRetrieveNextLabelToken : retrieves the label of the next internal node of a stretch
+   * LexCompNextLabelToken : returns the label of the next internal node of a stretch
+   * LexCompEndOfStretchToken : signals to the head that all labels have been retrieved
+   * LexCompRetrieveNextLabelForNbrToken : retrieves the label of the next internal node of a stretch for its neighbour
+   * LexCompNextLabelForNbrToken : returns the label of the next internal node of a stretch for its neighbour
+   * LexCompEndOfStretchForNbrToken : signals to the head that all labels have been retrieved for the neighbour
+   * LexCompInterruptToken : interrupts the lexicographic comparison process as result of a merge
+   * LexCompCleanUpToken : sent from head to tail to reset 'retrieved' flags
+   * LexCompCleanUpForNbrToken : sent from head to tail to reset 'retrievedForNbr' flags
+   */
+  struct LexCompToken : public Token {
+    // origin is used to define the direction (label) that a LeaderElectionToken
+    // was received from.
+    int origin;
+    int destination;
+  };
+  struct LexCompInitToken : public LexCompToken {
+    int value;
+    LexCompInitToken(int origin = -1, int value = 0, int destination = -1) {
+      this->origin = origin;
+      this->destination = destination;
+      this->value = value;
+    }
+  };
+  struct LexCompAckToken : public LexCompToken {
+    LexCompAckToken(int origin = -1, int destination = -1) {
+      this->origin = origin;
+      this->destination = destination;
+    }
+  };
+  struct LexCompNackToken : public LexCompToken {
+    LexCompNackToken(int origin = -1, int destination = -1) {
+      this->origin = origin;
+      this->destination = destination;
+    }
+  };
+  struct LexCompReqStretchLabelToken : public LexCompToken {
+    LexCompReqStretchLabelToken(int origin = -1, int destination = -1) {
+      this->origin = origin;
+      this->destination = destination;
+    }
+  };
+  struct LexCompReturnStretchLabelToken : public LexCompToken {
+    int value;
+    LexCompReturnStretchLabelToken(int origin = -1, int value = 0, int destination = -1) {
+      this->origin = origin;
+      this->destination = destination;
+      this->value = value;
+    }
+  };
+  struct LexCompEndOfNbrStretchToken : public LexCompToken {
+    LexCompEndOfNbrStretchToken(int origin = -1, int destination = -1) {
+      this->origin = origin;
+      this->destination = destination;
+    }
+  };
+  struct LexCompRetrieveNextLabelToken : public LexCompToken {
+    LexCompRetrieveNextLabelToken(int origin = -1, int destination = -1) {
+      this->origin = origin;
+      this->destination = destination;
+    }
+  };
+  struct LexCompNextLabelToken : public LexCompToken {
+    int value;
+    LexCompNextLabelToken(int origin = -1, int value = 0, int destination = -1) {
+      this->origin = origin;
+      this->destination = destination;
+      this->value = value;
+    }
+  };
+  struct LexCompEndOfStretchToken : public LexCompToken {
+    LexCompEndOfStretchToken(int origin = -1, int destination = -1) {
+      this->origin = origin;
+      this->destination = destination;
+    }
+  };
+  struct LexCompRetrieveNextLabelForNbrToken : public LexCompToken {
+    LexCompRetrieveNextLabelForNbrToken(int origin = -1, int destination = -1) {
+      this->origin = origin;
+      this->destination = destination;
+    }
+  };
+  struct LexCompNextLabelForNbrToken : public LexCompToken {
+    int value;
+    LexCompNextLabelForNbrToken(int origin = -1, int value = 0, int destination = -1) {
+      this->origin = origin;
+      this->destination = destination;
+      this->value = value;
+    }
+  };
+  struct LexCompEndOfStretchForNbrToken : public LexCompToken {
+    LexCompEndOfStretchForNbrToken(int origin = -1, int destination = -1) {
+      this->origin = origin;
+      this->destination = destination;
+    }
+  };
+  // Interrupt tokens are not of type LexCompToken, because otherwise they might be deleted
+  // by the cleanup process before they reach the other stretch
+  struct LexCompInterruptToken : public LeaderElectionToken {
+    LexCompInterruptToken(int origin = -1, int destination = -1) {
+      this->origin = origin;
+      this->destination = destination;
+    }
+  };
+  struct LexCompCleanUpToken : public LexCompToken {
+    LexCompCleanUpToken(int origin = -1, int destination = -1) {
+      this->origin = origin;
+      this->destination = destination;
+    }
+  };
+  struct LexCompCleanUpForNbrToken : public LexCompToken {
+    LexCompCleanUpForNbrToken(int origin = -1, int destination = -1) {
+      this->origin = origin;
+      this->destination = destination;
+    }
+  };
+
 
  private:
   friend class LeaderElectionStationaryDeterministicSystem;
@@ -201,6 +336,56 @@ protected:
 
     // Used to remember that the count has been sent to the tail node.
     bool countSent = false;
+
+    // Used by head node to denote whether it has sent a token to initialize lexicographic comparison
+    bool lexCompInit = false;
+
+    // Used by head node to denote whether it is currently participating in lexicographic comparison
+    bool lexicographicComparisonLeft = false;
+
+    // Used by head node to denote whether it is currently participating in lexicographic comparison
+    bool lexicographicComparisonRight = false;
+
+    // Used by head node during lexicographic comparison to denote whether it has requested the next label from the adjacent stretch
+    bool requestedNbrLabel = false;
+
+    // Used by head node during lexicographic comparison to denote whether it has received the requested label from the adjacent stretch
+    bool receivedNbrLabel = false;
+
+    // Used to store the label sent by the adjacent stretch during lexicographic comparison
+    int NbrLabel = 0;
+
+    // Used by head node during lexicographic comparison to denote whether it has requested the next internal label
+    bool requestedLabel = false;
+
+    // Used by head node during lexicographic comparison to denote whether it has received the requested internal label
+    bool receivedLabel = false;
+
+    // Used by head node during lexicographic comparison to denote whether its counter-clockwise adjacent stretch has requested a label
+    bool receivedLabelRequestFromNbr = false;
+
+    // Used by head node during lexicographic comparison to denote whether it has requested the next internal label
+    bool requestedLabelForNbr = false;
+
+    // Used by head node during lexicographic comparison to denote whether it has received the requested internal label
+    bool receivedLabelForNbr = false;
+    
+    // Used to store internal labels during lexicographic comparison
+    int internalLabel = 0;
+
+    // Used to store internal labels during lexicographic comparison
+    int internalLabelForNbr = 0;
+
+    // Used by head node during lexicographic comparison
+    // Set to 1 if this stretch had the first larger node, -1 if it was the other stretch
+    // As long as labels are equal, remains 0
+    int firstLargerLabel = 0;
+
+    // Denotes whether this node's label has been retrieved for lexicographic comparison
+    bool retrieved = false;
+
+    // Denotes whether this node's label has been retrieved for lexicographic comparison
+    bool retrievedForNbr = false;
 
     // Executes one node activation.
     virtual void activate();
