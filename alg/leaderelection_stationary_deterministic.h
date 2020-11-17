@@ -73,6 +73,8 @@ public:
   virtual std::array<int, 6> borderPointColors() const;
   // Draw points in between the edges connecting particles.
   virtual std::array<int, 6> borderPointBetweenEdgeColors() const;
+  // Draw points as half circles when the node is shared by two particles.
+  virtual std::array<int, 12> borderHalfPointBetweenEdgeColors() const;
 
   // Returns the label associated with the direction which the next (resp.
   // previous) node is according to the cycle that the node is on (which is
@@ -412,6 +414,7 @@ protected:
    std::array<int, 18> borderColorLabels;
    std::array<int, 6> borderPointColorLabels;
    std::array<int, 6> borderPointBetweenEdgeColorLabels;
+   std::array<int, 12> borderHalfPointBetweenEdgeColorLabels;
 };
 
 class LeaderElectionStationaryDeterministicSystem : public AmoebotSystem {

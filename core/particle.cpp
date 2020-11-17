@@ -64,6 +64,13 @@ std::array<int, 6> Particle::borderPointBetweenEdgeColors() const {
   return borderPointBetweenEdgeColors;
 }
 
+std::array<int, 12> Particle::borderHalfPointBetweenEdgeColors() const {
+  std::array<int, 12> borderHalfPointBetweenEdgeColors;
+  borderHalfPointBetweenEdgeColors.fill(-1);
+
+  return borderHalfPointBetweenEdgeColors;
+}
+
 QString Particle::inspectionText() const {
   return "Overwrite Particle::inspectionText() to specify an inspection text.";
 }

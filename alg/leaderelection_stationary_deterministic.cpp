@@ -27,6 +27,7 @@ LeaderElectionStationaryDeterministicParticle::LeaderElectionStationaryDetermini
   borderColorLabels.fill(-1);
   borderPointColorLabels.fill(-1);
   borderPointBetweenEdgeColorLabels.fill(-1);
+  borderHalfPointBetweenEdgeColorLabels.fill(-1);
 }
 
 void LeaderElectionStationaryDeterministicParticle::activate() {
@@ -318,6 +319,10 @@ std::array<int, 6> LeaderElectionStationaryDeterministicParticle::borderPointCol
 
 std::array<int, 6> LeaderElectionStationaryDeterministicParticle::borderPointBetweenEdgeColors() const {
   return borderPointBetweenEdgeColorLabels;
+}
+
+std::array<int, 12> LeaderElectionStationaryDeterministicParticle::borderHalfPointBetweenEdgeColors() const {
+  return borderHalfPointBetweenEdgeColorLabels;
 }
 
 int LeaderElectionStationaryDeterministicParticle::getNumberOfNbrs() const {
@@ -1210,8 +1215,15 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
 void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::paintNode(
     const int color) {
   // paint a node
-  // particle->borderColorLabels.at(3 * particle->localToGlobalDir(nodeDir) + 2) = color;
-  particle->borderPointBetweenEdgeColorLabels.at(particle->localToGlobalDir(nodeDir)) = color;
+  if (nextNodeClone) {
+    particle->borderHalfPointBetweenEdgeColorLabels.at(particle->localToGlobalDir(nodeDir)+6) = color;
+  }
+  else if (prevNodeClone) {
+    particle->borderHalfPointBetweenEdgeColorLabels.at(particle->localToGlobalDir(nodeDir)) = color;
+  }
+  else {
+    particle->borderPointBetweenEdgeColorLabels.at(particle->localToGlobalDir(nodeDir)) = color;
+  }
 }
 
 template <class TokenType>

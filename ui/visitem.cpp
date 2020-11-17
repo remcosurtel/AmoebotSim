@@ -247,6 +247,17 @@ void VisItem::drawBorderPoints(const Particle& p) {
       drawFromParticleTex(i + 15, pos);
     }
   }
+  // Draw half points       0       1       2       3       4      5      0       1       2       3       4      5
+  float xHalfOffsets[12] = {0.005, -0.255, -0.268,  0.000,  0.235, 0.250, 0.012, -0.255, -0.250,  0.015,  0.250, 0.255};
+  float yHalfOffsets[12] = {0.290,  0.150, -0.128, -0.270, -0.130, 0.150, 0.300,  0.147, -0.135, -0.285, -0.140, 0.150};
+  for (unsigned int i = 0; i < p.borderHalfPointBetweenEdgeColors().size(); ++i) {
+    auto pos = QPointF(p.head.x + 0.5 * p.head.y + xHalfOffsets[i], p.head.y * triangleHeight + yHalfOffsets[i]);
+    if (p.borderHalfPointBetweenEdgeColors().at(i) != -1) {
+      auto color = p.borderHalfPointBetweenEdgeColors().at(i);
+      glfn->glColor4i(qRed(color) << 23, qGreen(color) << 23, qBlue(color) << 23, 180 << 23);
+      drawFromParticleTex(i + 40, pos);
+    }
+  }
 }
 
 void VisItem::drawFromParticleTex(int index, const QPointF& pos) {
