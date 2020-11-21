@@ -14,7 +14,7 @@
 
 #include <QtGlobal>
 
-#include <QDebug>
+#include <qDebug>
 
 using namespace std;
 
@@ -31,7 +31,6 @@ LeaderElectionStationaryDeterministicParticle::LeaderElectionStationaryDetermini
 }
 
 void LeaderElectionStationaryDeterministicParticle::activate() {
-  qDebug() << "Particle: " + QString::number(head.x) + "," + QString::number(head.y);
   if (state == State::IdentificationLabeling) {
     // Determine the number of neighbors of the current particle.
     // If there are no neighbors, then that means the particle is the only
@@ -50,7 +49,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
     }
     else {
       // Initialize 6 nodes
-      qDebug() << "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ Initializing nodes... @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@";
+      qDebug() << "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ Initializing nodes... @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@";
       for (int dir = 0; dir < 6; dir++) {
         if (!hasNbrAtLabel((dir + 1) % 6) || !hasNbrAtLabel(dir)) {
           LeaderElectionNode* node = new LeaderElectionNode();
@@ -95,7 +94,6 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
   }
   else if (state == State::StretchExpansion) {
     if (nodes.size() == 0) {
-      qDebug() << "No nodes; finished.";
       state = State::Finished;
       return;
     }
@@ -139,6 +137,9 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
           node->internalLabelForNbr = clone->internalLabelForNbr;
           node->retrievedForNbr = clone->retrievedForNbr;
           node->receivedLabelRequestFromNbr = clone->receivedLabelRequestFromNbr;
+          node->lexCompTryMerge = clone->lexCompTryMerge;
+
+          node->terminationDetectionInitiated = clone->terminationDetectionInitiated;
 
           clone->cloneChange = false;
         }
@@ -173,6 +174,9 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
           node->internalLabelForNbr = clone->internalLabelForNbr;
           node->retrievedForNbr = clone->retrievedForNbr;
           node->receivedLabelRequestFromNbr = clone->receivedLabelRequestFromNbr;
+          node->lexCompTryMerge = clone->lexCompTryMerge;
+
+          node->terminationDetectionInitiated = clone->terminationDetectionInitiated;
 
           clone->cloneChange = false;
         }
@@ -180,21 +184,28 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
       }
     }
     // Activate each node. Nodes run stretch expansion.
-    qDebug() << "===================== Activating nodes... =====================";
     for (int i = 0; i < nodes.size(); i++){
       nodes.at(i)->activate();
     }
-    qDebug() << "Painting nodes...";
     for (int i = 0; i < nodes.size(); i++){
       LeaderElectionNode* node = nodes.at(i);
       if (node->mergePending) {
         node->paintNode(0xb900ff); // Purple
+      }
+      else if (node->terminationDetectionInitiated && node->predecessor == nullptr) {
+        node->paintNode(0xff0000); // Red
       }
       else if (node->lexicographicComparisonRight) {
         node->paintNode(0x00ff00); // Green
       }
       else if (node->predecessor == nullptr) {
         node->paintNode(0xff9b00); // Gold
+      }
+      else if (node->hasNodeToken<TerminationDetectionToken>(node->nextNode()->prevNodeDir)) {
+        node->paintNode(0x00aeff); // Light blue
+      }
+      else if (node->hasNodeToken<TerminationDetectionReturnToken>(node->prevNode()->nextNodeDir)) {
+        node->paintNode(0x00aeff); // Light blue
       }
       else {
         node->paintNode(0x000000); // Black
@@ -210,8 +221,18 @@ int LeaderElectionStationaryDeterministicParticle::headMarkDir() const {
 }
 
 int LeaderElectionStationaryDeterministicParticle::headMarkColor() const {
-  return -1;
-  // return 0x000000;
+  if (state == State::IdentificationLabeling) {
+    return 0x7e7e7e; // gray
+  }
+  else if (state == State::Finished) {
+    return 0xd2d2d2; // light gray
+  }
+  else if (state == State::Leader) {
+    return 0x00ff00; // green
+  }
+  else {
+    return -1;
+  }
 }
 
 LeaderElectionStationaryDeterministicParticle &
@@ -346,31 +367,103 @@ LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::LeaderElectio
   particle(nullptr) {}
 
 void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate() {
+  nodeState = particle->state;
   if (nodeState == State::StretchExpansion) {
-    qDebug() << "Running StretchExpansion...";
     if (predecessor == nullptr) {
       // This node is the head of a stretch
-      qDebug() << "Head node...";
+      // Process termination detection tokens
+      if (hasNodeToken<TerminationDetectionToken>(nextNode()->prevNodeDir)) {
+        qDebug() << "Head has termination detection token...";
+        std::shared_ptr<TerminationDetectionToken> token = peekNodeToken<TerminationDetectionToken>(nextNode()->prevNodeDir);
+        qDebug() << "Peeked at the token...";
+        if (token->counter != count) {
+          // Different count -> send token back, no termination
+          qDebug() << "Different count -> no termination";
+          takeNodeToken<TerminationDetectionToken>(nextNode()->prevNodeDir);
+          passNodeToken<TerminationDetectionReturnToken>(nextNodeDir, std::make_shared<TerminationDetectionReturnToken>(-1, token->counter, token->traversed, 0, false));
+        }
+        else {
+          // Same count, initiate lexicographic comparison if not started yet
+          // At the end, send back if different string, send to next stretch if equal
+          if (!lexCompInit) {
+            // Initiate lexicographic comparison
+            passNodeToken<LexCompInitToken>(nextNodeDir, std::make_shared<LexCompInitToken>(-1, count));
+            lexCompInit = true;
+            lexCompTryMerge = false;
+          }
+          qDebug() << "Same count; waiting for lexicographic comparison...";
+        }
+      }
+      // Pass termination detection return tokens
+      // If token intended for this stretch, process it
+      if (hasNodeToken<TerminationDetectionReturnToken>(prevNode()->nextNodeDir)) {
+        std::shared_ptr<TerminationDetectionReturnToken> token = takeNodeToken<TerminationDetectionReturnToken>(prevNode()->nextNodeDir);
+        bool termination = token->termination;
+        if (count != token->counter) {
+          termination = false;
+        }
+        if (token->traversed + 1 >= token->ttl) {
+          if (terminationDetectionInitiated) {
+            qDebug() << "Received termination detection return token";
+            if (termination) {
+              if (count == 6) {
+                // Single stretch with count 6 covering the outer border
+                // Head becomes leader
+                qDebug() << "Terminating...";
+                particle->state = State::Leader;
+                terminationDetectionInitiated = false;
+                return;
+              }
+              else {
+                // Multiple lexicographically equal stretches covering the border
+                // Move to next state -> Trees to break symmetry
+                // TODO: Trees to break symmetry
+                qDebug() << "Trees to break symmetry";
+                terminationDetectionInitiated = false;
+                return;
+              }
+            }
+            else {
+              qDebug() << "Not terminating...";
+              terminationDetectionInitiated = false;
+            }
+          }
+        }
+        else {
+          qDebug() << "Passing termination detection return token back";
+          passNodeToken<TerminationDetectionReturnToken>(nextNodeDir, std::make_shared<TerminationDetectionReturnToken>(-1, token->counter, token->ttl, token->traversed+1, termination));
+        }
+      }
+
       // Handle lexicographic comparison tokens
       // If ack token received -> start lexicographic comparison
       if (hasNodeToken<LexCompAckToken>(nextNode()->prevNodeDir)) {
-        qDebug() << "Processing ack token...";
         takeNodeToken<LexCompAckToken>(nextNode()->prevNodeDir);
         if (lexCompInit && !lexicographicComparisonRight) {
           lexicographicComparisonRight = true;
+          qDebug() << "Starting lexicographic comparison...";
         }
       }
       // If nack token received -> abort lexicographic comparison
       if (hasNodeToken<LexCompNackToken>(nextNode()->prevNodeDir)) {
-        qDebug() << "Processing nack token...";
         takeNodeToken<LexCompNackToken>(nextNode()->prevNodeDir);
         if (lexCompInit && !lexicographicComparisonRight) {
           lexCompInit = false;
         }
       }
+      // If interrupt token received, cancel lexicographic comparison
+      if (hasNodeToken<LexCompInterruptLeftToken>(nextNode()->prevNodeDir)) {
+        qDebug() << "Processing interrupt token from right...";
+        takeNodeToken<LexCompInterruptLeftToken>(nextNode()->prevNodeDir);
+        lexCompCleanUp();
+      }
+      if (hasNodeToken<LexCompInterruptRightToken>(prevNode()->nextNodeDir)) {
+        qDebug() << "Processing interrupt token from left...";
+        takeNodeToken<LexCompInterruptRightToken>(prevNode()->nextNodeDir);
+        lexCompCleanUpForNbr();
+      }
       // If init token received, send ack or nack token
       if (hasNodeToken<LexCompInitToken>(prevNode()->nextNodeDir)) {
-        qDebug() << "Processing init token...";
         std::shared_ptr<LexCompInitToken> token = takeNodeToken<LexCompInitToken>(prevNode()->nextNodeDir);
         int value = token->value;
         if (value == count && !lexicographicComparisonLeft) {
@@ -381,61 +474,23 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
           passNodeToken<LexCompNackToken>(prevNodeDir, std::make_shared<LexCompNackToken>());
         }
       }
-      // If interrupt token received, cancel lexicographic comparison
-      if (hasNodeToken<LexCompInterruptToken>(nextNode()->prevNodeDir)) {
-        qDebug() << "Processing interrupt token...";
-        takeNodeToken<LexCompInterruptToken>(nextNode()->prevNodeDir);
-        if (lexicographicComparisonRight) {
-          firstLargerLabel = 0;
-          NbrLabel = 0;
-          internalLabel = 0;
-          requestedNbrLabel = false;
-          receivedNbrLabel = false;
-          requestedLabel = false;
-          receivedLabel = false;
-          lexCompInit = false;
-          lexicographicComparisonRight = false;
-          retrieved = false;
-          if (successor != nullptr) {
-            passNodeToken<LexCompCleanUpToken>(nextNodeDir, std::make_shared<LexCompCleanUpToken>());
-          }
-          countSent = false;
-        }
-      }
-      if (hasNodeToken<LexCompInterruptToken>(prevNode()->nextNodeDir)) {
-        qDebug() << "Processing interrupt token...";
-        takeNodeToken<LexCompInterruptToken>(prevNode()->nextNodeDir);
-        if (lexicographicComparisonLeft) {
-          internalLabelForNbr = 0;
-          requestedLabelForNbr = false;
-          receivedLabelForNbr = false;
-          lexicographicComparisonLeft = false;
-          retrievedForNbr = false;
-          if (successor != nullptr) {
-            passNodeToken<LexCompCleanUpForNbrToken>(nextNodeDir, std::make_shared<LexCompCleanUpForNbrToken>());
-          }
-        }
-      }
       
       // =================================== Lexicographic comparison to clockwise adjacent stretch ============================================
       if (lexicographicComparisonRight) {
         // Request labels from the adjacent stretch
         if (!requestedNbrLabel) {
-          qDebug() << "Requesting label from adjacent stretch...";
           passNodeToken<LexCompReqStretchLabelToken>(nextNodeDir, std::make_shared<LexCompReqStretchLabelToken>());
           requestedNbrLabel = true;
         }
         // Receive labels from the adjacent stretch after requesting them
         else if (!receivedNbrLabel) {
           if (hasNodeToken<LexCompReturnStretchLabelToken>(nextNode()->prevNodeDir)) {
-            qDebug() << "Processing stretch label token...";
             std::shared_ptr<LexCompReturnStretchLabelToken> token = takeNodeToken<LexCompReturnStretchLabelToken>(nextNode()->prevNodeDir);
             NbrLabel = token->value;
             receivedNbrLabel = true;
           }
           // Receive end of stretch tokens from adjacent stretch
           else if (hasNodeToken<LexCompEndOfNbrStretchToken>(nextNode()->prevNodeDir)) {
-            qDebug() << "Processing end of stretch token...";
             takeNodeToken<LexCompEndOfNbrStretchToken>(nextNode()->prevNodeDir);
             NbrLabel = 0;
             receivedNbrLabel = true;
@@ -450,7 +505,6 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
             retrieved = true;
           }
           else {
-            qDebug() << "Requesting internal label...";
             passNodeToken<LexCompRetrieveNextLabelToken>(nextNodeDir, std::make_shared<LexCompRetrieveNextLabelToken>());
             requestedLabel = true;
           }
@@ -458,14 +512,12 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
         // Receive internal labels after requesting them
         else if (!receivedLabel) {
           if (hasNodeToken<LexCompNextLabelToken>(nextNode()->prevNodeDir)) {
-            qDebug() << "Processing internal label token...";
             std::shared_ptr<LexCompNextLabelToken> token = takeNodeToken<LexCompNextLabelToken>(nextNode()->prevNodeDir);
             internalLabel = token->value;
             receivedLabel = true;
           }
           // Receive end of stretch tokens
           else if (hasNodeToken<LexCompEndOfStretchToken>(nextNode()->prevNodeDir)) {
-            qDebug() << "Processing internal end of stretch token...";
             takeNodeToken<LexCompEndOfStretchToken>(nextNode()->prevNodeDir);
             internalLabel = 0;
             receivedLabel = true;
@@ -473,123 +525,140 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
         }
         // If both labels received, compare them
         if (receivedNbrLabel && receivedLabel) {
-          qDebug() << "Comparing received labels...";
+          qDebug() << "Comparing received labels: " + QString::number(internalLabel) + " & " + QString::number(NbrLabel);
           // If all labels thus far have been the same
           if (firstLargerLabel == 0) {
             // Then if the labels are different, remember which was larger
             if (internalLabel > NbrLabel) {
+              qDebug() << "Set first larger label for self.";
               firstLargerLabel = 1;
             }
             else if (internalLabel < NbrLabel) {
+              qDebug() << "Set first larger for neighbour.";
               firstLargerLabel = -1;
+            }
+          }
+          if (firstLargerLabel != 0) {
+            // Send back termination detection token -> no termination
+            if (hasNodeToken<TerminationDetectionToken>(nextNode()->prevNodeDir)) {
+              qDebug() << "Lexicographically inequal -> no termination";
+              std::shared_ptr<TerminationDetectionToken> token = takeNodeToken<TerminationDetectionToken>(nextNode()->prevNodeDir);
+              passNodeToken<TerminationDetectionReturnToken>(nextNodeDir, std::make_shared<TerminationDetectionReturnToken>(-1, token->counter, token->traversed, 0, false));
             }
           }
           // If one of the labels is 0, then the stretch has exhausted all its labels
           // In this case, the other stretch is lexicographically larger
           if (internalLabel == 0 && NbrLabel != 0) {
+            qDebug() << "Adjacent stretch is lexicographically larger";
             // Adjacent stretch is lexicographically larger -> no merge
-            passNodeToken<LexCompInterruptToken>(nextNodeDir, std::make_shared<LexCompInterruptToken>());
-            // Clean up
-            firstLargerLabel = 0;
-            NbrLabel = 0;
-            internalLabel = 0;
-            requestedNbrLabel = false;
-            receivedNbrLabel = false;
-            requestedLabel = false;
-            receivedLabel = false;
-            lexCompInit = false;
-            lexicographicComparisonRight = false;
-            retrieved = false;
-            if (successor != nullptr) {
-              passNodeToken<LexCompCleanUpToken>(nextNodeDir, std::make_shared<LexCompCleanUpToken>());
-            }
-            countSent = false;
+            passNodeToken<LexCompInterruptRightToken>(nextNodeDir, std::make_shared<LexCompInterruptRightToken>());
+            qDebug() << "Sent interrupt token";
+            lexCompCleanUp();
+            qDebug() << "Cleaned up";
           }
           else if (internalLabel != 0 && NbrLabel == 0) {
             // This stretch is lexicographically larger -> merge
-            // Clean up
-            firstLargerLabel = 0;
-            NbrLabel = 0;
-            internalLabel = 0;
-            requestedNbrLabel = false;
-            receivedNbrLabel = false;
-            requestedLabel = false;
-            receivedLabel = false;
-            lexCompInit = false;
-            lexicographicComparisonRight = false;
-            retrieved = false;
-            if (successor != nullptr) {
-              passNodeToken<LexCompCleanUpToken>(nextNodeDir, std::make_shared<LexCompCleanUpToken>());
-            }
-            countSent = false;
+            qDebug() << "This stretch is lexicographically larger";
+            lexCompCleanUp();
+            qDebug() << "Cleaned up";
             // Merge
-            passNodeToken<LexCompAttemptMergeToken>(nextNodeDir, std::make_shared<LexCompAttemptMergeToken>(-1, count));
-            mergePending = true;
-            mergeAck = false;
-            mergeDir = 1;
-          }
-          // If both labels are 0, then both strings were of the same length
-          if (internalLabel == 0 && NbrLabel == 0) {
-            // In this case, the string which had the first larger label is lexicographically larger
-            if (firstLargerLabel == -1) {
-              // Adjacent stretch is lexicographically larger -> no merge
-              // Clean up
-              firstLargerLabel = 0;
-              NbrLabel = 0;
-              internalLabel = 0;
-              requestedNbrLabel = false;
-              receivedNbrLabel = false;
-              requestedLabel = false;
-              receivedLabel = false;
-              lexCompInit = false;
-              lexicographicComparisonRight = false;
-              retrieved = false;
-              if (successor != nullptr) {
-                passNodeToken<LexCompCleanUpToken>(nextNodeDir, std::make_shared<LexCompCleanUpToken>());
-              }
-              countSent = false;
-            }
-            else if (firstLargerLabel == 1) {
-              // This stretch is lexicographically larger -> merge
-              // Clean up
-              firstLargerLabel = 0;
-              NbrLabel = 0;
-              internalLabel = 0;
-              requestedNbrLabel = false;
-              receivedNbrLabel = false;
-              requestedLabel = false;
-              receivedLabel = false;
-              lexCompInit = false;
-              lexicographicComparisonRight = false;
-              retrieved = false;
-              if (successor != nullptr) {
-                passNodeToken<LexCompCleanUpToken>(nextNodeDir, std::make_shared<LexCompCleanUpToken>());
-              }
-              countSent = false;
-              // Merge
+            if (lexCompTryMerge) {
+              qDebug() << "Attempting merge...";
               passNodeToken<LexCompAttemptMergeToken>(nextNodeDir, std::make_shared<LexCompAttemptMergeToken>(-1, count));
               mergePending = true;
               mergeAck = false;
               mergeDir = 1;
             }
+          }
+          // If both labels are 0, then both strings were of the same length
+          else if (internalLabel == 0 && NbrLabel == 0) {
+            // In this case, the string which had the first larger label is lexicographically larger
+            qDebug() << "Stretches are of same length";
+            if (firstLargerLabel == -1) {
+              // Adjacent stretch is lexicographically larger -> no merge
+              qDebug() << "But adjacent stretch is lexicographically larger";
+              lexCompCleanUp();
+              qDebug() << "Cleaned up";
+            }
+            else if (firstLargerLabel == 1) {
+              // This stretch is lexicographically larger -> merge
+              qDebug() << "But this stretch is lexicographically larger";
+              lexCompCleanUp();
+              qDebug() << "Cleaned up";
+              // Merge
+              if (lexCompTryMerge) {
+                qDebug() << "Attempting merge...";
+                passNodeToken<LexCompAttemptMergeToken>(nextNodeDir, std::make_shared<LexCompAttemptMergeToken>(-1, count));
+                mergePending = true;
+                mergeAck = false;
+                mergeDir = 1;
+              }
+            }
             // If both strings were identical, then trigger termination detection
             else {
-              // TODO: termination detection
-              // Clean up
-              firstLargerLabel = 0;
-              NbrLabel = 0;
-              internalLabel = 0;
-              requestedNbrLabel = false;
-              receivedNbrLabel = false;
-              requestedLabel = false;
-              receivedLabel = false;
-              lexCompInit = false;
-              lexicographicComparisonRight = false;
-              retrieved = false;
-              if (successor != nullptr) {
-                passNodeToken<LexCompCleanUpToken>(nextNodeDir, std::make_shared<LexCompCleanUpToken>());
+              qDebug() << "Stretches are lexicographically equal";
+              lexCompCleanUp();
+              qDebug() << "Cleaned up";
+              /*
+               * Termination detection
+               * 
+               * Termination detection happens in the counter-clockwise direction, opposite to the merges.
+               * Whenever a stretch finds that it is lexicographically equal to its clockwise neighbour, 
+               * termination detection is initiated. This is done by sending a TerminationDetectionToken
+               * in the counter-clockwise direction. This token is given a TTL (Time To Live) value, 
+               * indicating how many stretches it must traverse. This value is equal to 6/count.
+               * Additionally, the token gets a 'traversed' value, which is incremented each time the token 
+               * reaches the head node of a stretch. When traversed == ttl, the token will be sent back
+               * after it has been processed.
+               * 
+               * Whenever a TerminationDetectionToken is received by any node, the node checks that
+               * it doesn't also have a merge message. If it does, then the token will be sent back
+               * with the 'termination' variable set to false.
+               * 
+               * When a head node receives the token, it compares its count to the 'counter' variable
+               * stored in the token. If these are different, then the token will be sent back with 
+               * 'termination' set to false.
+               * If the counts are the same, however, it initiates lexicographic comparison to its
+               * clockwise neighbour (if not already in progress). Only if they are lexicographically
+               * equal, the token is sent to the next counter-clockwise adjacent stretch. Otherwise, 
+               * The token is returned with the 'termination' variable set to false.
+               * 
+               * If ttl == traversed and the clockwise adjacent stretch is lexicographically equal,
+               * then the token is returned with the 'termination' variable set to true.
+               * 
+               * When the initiator of termination detection receives a token back with 'termination'
+               * set to true, then if count == 6, it is the only remaining stretch and the head will
+               * become the leader. However, if count != 6, then the outer border is covered by 
+               * multiple lexicographically equal stretches. In this case we move to the next state:
+               * Trees to break symmetry.
+               */
+
+              if ((count == 1 || count == 2 || count == 3) && !terminationDetectionInitiated) {
+                qDebug() << "Lexicographically equal -> starting termination detection...";
+                passNodeToken<TerminationDetectionToken>(prevNodeDir, std::make_shared<TerminationDetectionToken>(-1, count, 6/count, 0));
+                terminationDetectionInitiated = true;
               }
-              countSent = false;
+              else if (count == 6 && !terminationDetectionInitiated) {
+                // Border covered by 1 stretch of count 6
+                qDebug() << "Lexicographically equal with count 6 -> terminating...";
+                particle->state = State::Leader;
+                return;
+              }
+
+              // If termination detection token, send to next stretch
+              // or if last stretch, return to initiator with termination set to true
+              if (hasNodeToken<TerminationDetectionToken>(nextNode()->prevNodeDir)) {
+                qDebug() << "Head has termination detection token AND lexicographically equal";
+                std::shared_ptr<TerminationDetectionToken> token = takeNodeToken<TerminationDetectionToken>(nextNode()->prevNodeDir);
+                if (token->traversed + 1 >= token->ttl) {
+                  qDebug() << "Sending termination token back";
+                  passNodeToken<TerminationDetectionReturnToken>(nextNodeDir, std::make_shared<TerminationDetectionReturnToken>(-1, token->counter, token->traversed+1, 0, true));
+                }
+                else {
+                  qDebug() << "Passing termination detection token to next head";
+                  passNodeToken<TerminationDetectionToken>(prevNodeDir, std::make_shared<TerminationDetectionToken>(-1, token->counter, token->ttl, token->traversed+1));
+                }
+              }
             }
           }
           // Reset variables to request next labels
@@ -604,7 +673,6 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
         // Receive requests for labels
         if (!receivedLabelRequestFromNbr) {
           if (hasNodeToken<LexCompReqStretchLabelToken>(prevNode()->nextNodeDir)) {
-            qDebug() << "Processing label request token...";
             takeNodeToken<LexCompReqStretchLabelToken>(prevNode()->nextNodeDir);
             receivedLabelRequestFromNbr = true;
           }
@@ -619,7 +687,6 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
           }
           else {
             if (successor != nullptr) {
-              qDebug() << "Requesting internal label...";
               passNodeToken<LexCompRetrieveNextLabelForNbrToken>(nextNodeDir, std::make_shared<LexCompRetrieveNextLabelForNbrToken>());
               requestedLabelForNbr = true;
             }
@@ -634,14 +701,12 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
         // Receive internal labels after requesting them
         else if (!receivedLabelForNbr) {
           if (hasNodeToken<LexCompNextLabelForNbrToken>(nextNode()->prevNodeDir)) {
-            qDebug() << "Processing internal label token...";
             std::shared_ptr<LexCompNextLabelForNbrToken> token = takeNodeToken<LexCompNextLabelForNbrToken>(nextNode()->prevNodeDir);
             internalLabelForNbr = token->value;
             receivedLabelForNbr = true;
           }
           // Receive end of stretch tokens
           else if (hasNodeToken<LexCompEndOfStretchForNbrToken>(nextNode()->prevNodeDir)) {
-            qDebug() << "Processing internal end of stretch token...";
             takeNodeToken<LexCompEndOfStretchForNbrToken>(nextNode()->prevNodeDir);
             internalLabelForNbr = 0;
             receivedLabelForNbr = true;
@@ -649,10 +714,10 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
         }
         // Respond to label request when ready
         if (receivedLabelRequestFromNbr && receivedLabelForNbr) {
-          qDebug() << "Sending received internal label...";
           // If there was an internal label, send it
+          qDebug() << "Sending label to neighbour: " + QString::number(internalLabelForNbr);
           if (internalLabelForNbr != 0) {
-            passNodeToken<LexCompReturnStretchLabelToken>(prevNodeDir, std::make_shared<LexCompReturnStretchLabelToken>(-1, internalLabel));
+            passNodeToken<LexCompReturnStretchLabelToken>(prevNodeDir, std::make_shared<LexCompReturnStretchLabelToken>(-1, internalLabelForNbr));
             receivedLabelRequestFromNbr = false;
             requestedLabelForNbr = false;
             receivedLabelForNbr = false;
@@ -661,16 +726,7 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
           // Otherwise signal end of stretch
           else {
             passNodeToken<LexCompEndOfNbrStretchToken>(prevNodeDir, std::make_shared<LexCompEndOfNbrStretchToken>());
-            // Clean up
-            internalLabelForNbr = 0;
-            receivedLabelRequestFromNbr = false;
-            requestedLabelForNbr = false;
-            receivedLabelForNbr = false;
-            lexicographicComparisonLeft = false;
-            retrievedForNbr = false;
-            if (successor != nullptr) {
-              passNodeToken<LexCompCleanUpForNbrToken>(nextNodeDir, std::make_shared<LexCompCleanUpForNbrToken>());
-            }
+            lexCompCleanUpForNbr();
           }
         }
       }
@@ -685,168 +741,93 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
         mergeAck = true;
         // Interrupt lexicographic comparison if applicable
         if (lexicographicComparisonLeft) {
-          passNodeToken<LexCompInterruptToken>(prevNodeDir, std::make_shared<LexCompInterruptToken>());
-          internalLabelForNbr = 0;
-          receivedLabelRequestFromNbr = false;
-          requestedLabelForNbr = false;
-          receivedLabelForNbr = false;
-          lexicographicComparisonLeft = false;
-          retrievedForNbr = false;
-          if (successor != nullptr) {
-            passNodeToken<LexCompCleanUpForNbrToken>(nextNodeDir, std::make_shared<LexCompCleanUpForNbrToken>());
-          }
+          passNodeToken<LexCompInterruptLeftToken>(prevNodeDir, std::make_shared<LexCompInterruptLeftToken>());
+          lexCompCleanUpForNbr();
         }
       }
       if (hasNodeToken<MergeRequestToken>(prevNode()->nextNodeDir)) {
-        qDebug() << "Merge request received.";
         if (mergePending) {
-          qDebug() << "Merge pending.";
           takeNodeToken<MergeRequestToken>(prevNode()->nextNodeDir);
           passNodeToken<MergeNackToken>(prevNodeDir, std::make_shared<MergeNackToken>());
-          qDebug() << "Request declined.";
         }
         else {
-          qDebug() << "No merge pending.";
           takeNodeToken<MergeRequestToken>(prevNode()->nextNodeDir);
           passNodeToken<MergeAckToken>(prevNodeDir, std::make_shared<MergeAckToken>());
           mergePending = true;
           mergeAck = true;
           mergeDir = -1;
-          qDebug() << "Request acknowledged.";
           // Interrupt lexicographic comparison if applicable
           if (lexCompInit) {
-            passNodeToken<LexCompInterruptToken>(nextNodeDir, std::make_shared<LexCompInterruptToken>());
+            passNodeToken<LexCompInterruptRightToken>(nextNodeDir, std::make_shared<LexCompInterruptRightToken>());
           }
-          firstLargerLabel = 0;
-          NbrLabel = 0;
-          internalLabel = 0;
-          requestedNbrLabel = false;
-          receivedNbrLabel = false;
-          requestedLabel = false;
-          receivedLabel = false;
-          lexCompInit = false;
-          lexicographicComparisonRight = false;
-          retrieved = false;
-          if (successor != nullptr) {
-            passNodeToken<LexCompCleanUpToken>(nextNodeDir, std::make_shared<LexCompCleanUpToken>());
-          }
-          countSent = false;
+          lexCompCleanUp();
         }
       }
       if (successor == nullptr) {
         // This node is also the tail of a stretch,
         // therefore it is a stretch of 1 node
-        qDebug() << "Tail node...";
         if (unaryLabel > 0 && !mergePending) {
           LeaderElectionNode* next = nextNode(true);
           if (unaryLabel > next->count && unaryLabel + next->count <= 6) {
             // Send a merge request
-            qDebug() << "Sending merge request...";
             passNodeToken<MergeRequestToken>(nextNodeDir, std::make_shared<MergeRequestToken>());
             mergePending = true;
             mergeAck = false;
             mergeDir = 1;
-            qDebug() << "Merge request sent.";
             // Interrupt lexicographic comparison if applicable
             if (lexicographicComparisonLeft) {
-              passNodeToken<LexCompInterruptToken>(prevNodeDir, std::make_shared<LexCompInterruptToken>());
-              // Clean up
-              lexicographicComparisonLeft = false;
-              retrievedForNbr = false;
-              requestedLabelForNbr = false;
-              receivedLabelForNbr = false;
-              internalLabelForNbr = 0;
-              receivedLabelRequestFromNbr = false;
-            }
-          }
-          else if (unaryLabel == next->count && unaryLabel + next->count <= 6) {
-            // Same counts -> lexicographic comparison
-            // Either next stretch is larger (do nothing)
-            // or also of size 1 with label 1 (trigger termination detection)
-            if (next->successor == nullptr) {
-              // TODO: termination detection
-
+              passNodeToken<LexCompInterruptLeftToken>(prevNodeDir, std::make_shared<LexCompInterruptLeftToken>());
+              lexCompCleanUpForNbr();
             }
           }
         }
         if (mergePending && mergeAck) {
-          qDebug() << "Merging...";
           if (mergeDir == 1) {
-            qDebug() << "Merging right...";
             successor = nextNode(true);
             count += successor->count;
           }
           else {
-            qDebug() << "Merging left...";
             predecessor = prevNode(true);
           }
           mergePending = false;
           mergeAck = false;
-          qDebug() << "Merged.";
         }
       }
       else {
         // Node is head but not tail of stretch
-        qDebug() << "Head but not tail node";
         if (hasNodeToken<MergeRequestToken>(prevNode()->nextNodeDir)) {
-          qDebug() << "Received merge request";
           if (!mergePending) {
-            qDebug() << "No merge pending";
             takeNodeToken<MergeRequestToken>(prevNode()->nextNodeDir);
             predecessor = prevNode(true);
             passNodeToken<MergeAckToken>(prevNodeDir, std::make_shared<MergeAckToken>());
-            qDebug() << "Merge request acknowledged";
             // Interrupt lexicographic comparison if applicable
             if (lexCompInit) {
-              passNodeToken<LexCompInterruptToken>(nextNodeDir, std::make_shared<LexCompInterruptToken>());
+              passNodeToken<LexCompInterruptRightToken>(nextNodeDir, std::make_shared<LexCompInterruptRightToken>());
             }
-            firstLargerLabel = 0;
-            NbrLabel = 0;
-            internalLabel = 0;
-            requestedNbrLabel = false;
-            receivedNbrLabel = false;
-            requestedLabel = false;
-            receivedLabel = false;
-            lexCompInit = false;
-            lexicographicComparisonRight = false;
-            retrieved = false;
-            if (successor != nullptr) {
-              passNodeToken<LexCompCleanUpToken>(nextNodeDir, std::make_shared<LexCompCleanUpToken>());
-            }
-            countSent = false;
+            lexCompCleanUp();
           }
           else {
-            qDebug() << "Merge pending";
             takeNodeToken<MergeRequestToken>(prevNode()->nextNodeDir);
             passNodeToken<MergeNackToken>(prevNodeDir, std::make_shared<MergeNackToken>());
-            qDebug() << "Merge request declined";
           }
         }
         if (mergePending && mergeAck && mergeDir == -1) {
-          qDebug() << "Merging left...";
           predecessor = prevNode(true);
           mergePending = false;
           mergeAck = false;
-          qDebug() << "Merged.";
         }
         else if (!mergePending) {
-          qDebug() << "No merge pending";
           if (!countSent && count > 0 && !lexCompInit) {
-            qDebug() << "Sending count towards tail...";
             passNodeToken<CountToken>(nextNodeDir, std::make_shared<CountToken>(-1, count));
             countSent = true;
-            qDebug() << "Count sent";
           }
           else if (!lexCompInit) {
             if (hasNodeToken<CountReturnToken>(successor->prevNodeDir)) {
-              qDebug() << "Received count return token";
               std::shared_ptr<CountReturnToken> token = takeNodeToken<CountReturnToken>(successor->prevNodeDir);
               int value = token->value;
               countSent = false;
-              qDebug() << "Value: " + QString::number(value);
               if (count > 0 && count > value && count + value <= 6) {
                 // Attempt to merge with the adjacent stretch
-                qDebug() << "Attempting merge...";
                 passNodeToken<AttemptMergeToken>(nextNodeDir, std::make_shared<AttemptMergeToken>(-1, count));
                 mergePending = true;
                 mergeDir = 1;
@@ -854,21 +835,11 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
                 if (lexicographicComparisonLeft) {
                   // Lexicographic comparison was initiated by the counter-clockwise adjacent stretch
                   // Send interrupt token in this direction
-                  passNodeToken<LexCompInterruptToken>(prevNodeDir, std::make_shared<LexCompInterruptToken>());
-                  // Clean up lexicographic comparison variables
-                  internalLabelForNbr = 0;
-                  requestedLabelForNbr = false;
-                  receivedLabelForNbr = false;
-                  lexicographicComparisonLeft = false;
-                  retrievedForNbr = false;
-                  receivedLabelRequestFromNbr = false;
-                  if (successor != nullptr) {
-                    passNodeToken<LexCompCleanUpForNbrToken>(nextNodeDir, std::make_shared<LexCompCleanUpForNbrToken>());
-                  }
+                  passNodeToken<LexCompInterruptLeftToken>(prevNodeDir, std::make_shared<LexCompInterruptLeftToken>());
+                  lexCompCleanUpForNbr();
                 }
               }
               else if (count > 0 && count == value && count + value <= 6) {
-                qDebug() << "Counts equal, lexicographic comparison...";
                 /*
                  * Lexicographic comparison
                  * 
@@ -896,20 +867,25 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
                 if (!lexCompInit) {
                   passNodeToken<LexCompInitToken>(nextNodeDir, std::make_shared<LexCompInitToken>(-1, count));
                   lexCompInit = true;
+                  lexCompTryMerge = true;
                 }
+              }
+              else if ((count == 1 || count == 2 || count == 3 || count == 6) && count == value) {
+                // Initialize lexicographic comparison
+                // But do not merge, only start termination detection if strings are lexicographically equal
+                passNodeToken<LexCompInitToken>(nextNodeDir, std::make_shared<LexCompInitToken>(-1, count));
+                lexCompInit = true;
+                lexCompTryMerge = false;
               }
             }
           }
         }
         else if (mergePending) {
-          qDebug() << "Merge pending";
           if (hasNodeToken<MergeNackToken>(successor->prevNodeDir)) {
-            qDebug() << "Received nack token; aborting merge";
             takeNodeToken<MergeNackToken>(successor->prevNodeDir);
             mergePending = false;
           }
           else if (hasNodeToken<MergeCountToken>(successor->prevNodeDir)) {
-            qDebug() << "Received merge count token; updating count...";
             std::shared_ptr<MergeCountToken> token = takeNodeToken<MergeCountToken>(successor->prevNodeDir);
             int value = token->value;
             count += value;
@@ -920,12 +896,59 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
     }
     else if (successor == nullptr) {
       // Tail node (and not head node)
-      qDebug() << "Tail node";
+      // Pass termination detection tokens
+      if (hasNodeToken<TerminationDetectionToken>(nextNode()->prevNodeDir)) {
+        qDebug() << "Tail node has termination detection token";
+        std::shared_ptr<TerminationDetectionToken> token = takeNodeToken<TerminationDetectionToken>(nextNode()->prevNodeDir);
+        bool hasMergeToken = false;
+        if (hasNodeToken<LexCompAttemptMergeToken>(predecessor->nextNodeDir)) {
+          hasMergeToken = true;
+        }
+        if (hasNodeToken<AttemptMergeToken>(predecessor->nextNodeDir)) {
+          hasMergeToken = true;
+        }
+        if (hasNodeToken<MergeRequestToken>(predecessor->nextNodeDir)) {
+          hasMergeToken = true;
+        }
+        if (hasNodeToken<MergeAckToken>(nextNode()->prevNodeDir)) {
+          hasMergeToken = true;
+        }
+        if (hasNodeToken<MergeCountToken>(nextNode()->prevNodeDir)) {
+          hasMergeToken = true;
+        }
+        if (hasMergeToken) {
+          if(token->traversed > 0) {
+            passNodeToken<TerminationDetectionReturnToken>(nextNodeDir, std::make_shared<TerminationDetectionReturnToken>(-1, token->counter, token->traversed+1, 0, false));
+          }
+        }
+        else {
+          qDebug() << "Passing termination detection token...";
+          passNodeToken<TerminationDetectionToken>(prevNodeDir, std::make_shared<TerminationDetectionToken>(-1, token->counter, token->ttl, token->traversed));
+        }
+      }
+      if (hasNodeToken<TerminationDetectionReturnToken>(prevNode()->nextNodeDir)) {
+        std::shared_ptr<TerminationDetectionReturnToken> token = takeNodeToken<TerminationDetectionReturnToken>(prevNode()->nextNodeDir);
+        passNodeToken<TerminationDetectionReturnToken>(nextNodeDir, std::make_shared<TerminationDetectionReturnToken>(-1, token->counter, token->ttl, token->traversed, token->termination));
+      }
+
       // Pass lexicographic comparison tokens
       if (hasNodeToken<LexCompCleanUpToken>(predecessor->nextNodeDir)) {
         // Receive cleanup tokens
         takeNodeToken<LexCompCleanUpToken>(predecessor->nextNodeDir);
         retrieved = false;
+        // intercept label tokens and remove them
+        while (hasNodeToken<LexCompReturnStretchLabelToken>(nextNode()->prevNodeDir)) {
+          takeNodeToken<LexCompReturnStretchLabelToken>(nextNode()->prevNodeDir);
+        }
+        while (hasNodeToken<LexCompEndOfNbrStretchToken>(nextNode()->prevNodeDir)) {
+          takeNodeToken<LexCompEndOfNbrStretchToken>(nextNode()->prevNodeDir);
+        }
+        while (hasNodeToken<LexCompNextLabelToken>(nextNode()->prevNodeDir)) {
+          takeNodeToken<LexCompNextLabelToken>(nextNode()->prevNodeDir);
+        }
+        while (hasNodeToken<LexCompEndOfStretchToken>(nextNode()->prevNodeDir)) {
+          takeNodeToken<LexCompEndOfStretchToken>(nextNode()->prevNodeDir);
+        }
       }
       if (hasNodeToken<LexCompCleanUpForNbrToken>(predecessor->nextNodeDir)) {
         // Receive cleanup tokens
@@ -948,15 +971,15 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
         takeNodeToken<LexCompNackToken>(nextNode()->prevNodeDir);
         passNodeToken<LexCompNackToken>(prevNodeDir, std::make_shared<LexCompNackToken>());
       }
-      if (hasNodeToken<LexCompInterruptToken>(nextNode()->prevNodeDir)) {
+      if (hasNodeToken<LexCompInterruptLeftToken>(nextNode()->prevNodeDir)) {
         // Pass interrupt tokens in counter-clockwise direction
-        takeNodeToken<LexCompInterruptToken>(nextNode()->prevNodeDir);
-        passNodeToken<LexCompInterruptToken>(prevNodeDir, std::make_shared<LexCompInterruptToken>());
+        takeNodeToken<LexCompInterruptLeftToken>(nextNode()->prevNodeDir);
+        passNodeToken<LexCompInterruptLeftToken>(prevNodeDir, std::make_shared<LexCompInterruptLeftToken>());
       }
-      if (hasNodeToken<LexCompInterruptToken>(predecessor->nextNodeDir)) {
+      if (hasNodeToken<LexCompInterruptRightToken>(predecessor->nextNodeDir)) {
         // Pass interrupt tokens in clockwise direction
-        takeNodeToken<LexCompInterruptToken>(predecessor->nextNodeDir);
-        passNodeToken<LexCompInterruptToken>(nextNodeDir, std::make_shared<LexCompInterruptToken>());
+        takeNodeToken<LexCompInterruptRightToken>(predecessor->nextNodeDir);
+        passNodeToken<LexCompInterruptRightToken>(nextNodeDir, std::make_shared<LexCompInterruptRightToken>());
       }
       if (hasNodeToken<LexCompRetrieveNextLabelToken>(predecessor->nextNodeDir)) {
         // Handle retrieve internal label tokens
@@ -1012,74 +1035,114 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
         }
         else {
           // Counts have changed since communication, abort merge.
-          qDebug() << "Requirements not satisfied, cancelling merge";
           passNodeToken<MergeNackToken>(prevNodeDir, std::make_shared<MergeNackToken>());
-          qDebug() << "Nack token sent";
         }
       }
 
       if (hasNodeToken<CountToken>(predecessor->nextNodeDir)) {
-        qDebug() << "Received count token";
         std::shared_ptr<CountToken> token = takeNodeToken<CountToken>(predecessor->nextNodeDir);
         int value = token->value;
         count = value;
-        qDebug() << "Value: " + QString::number(value);
         LeaderElectionNode* headNbr = nextNode(true);
         passNodeToken<CountReturnToken>(prevNodeDir, std::make_shared<CountReturnToken>(-1, headNbr->count));
-        qDebug() << "Sent return count token";
       }
       if (hasNodeToken<AttemptMergeToken>(predecessor->nextNodeDir)) {
-        qDebug() << "Received attempt merge token";
         std::shared_ptr<AttemptMergeToken> token = takeNodeToken<AttemptMergeToken>(predecessor->nextNodeDir);
         int value = token->value;
         count = value;
-        qDebug() << "Value: " + QString::number(value);
         LeaderElectionNode* headNbr = nextNode(true);
         if (count > 0 && count > headNbr->count && count + headNbr->count <= 6) {
-          qDebug() << "Sending merge request token";
           passNodeToken<MergeRequestToken>(nextNodeDir, std::make_shared<MergeRequestToken>());
           mergePending = true;
           mergeDir = 1;
         }
         else {
           // Counts have changed since communication, abort merge.
-          qDebug() << "Requirements not satisfied, cancelling merge";
           passNodeToken<MergeNackToken>(prevNodeDir, std::make_shared<MergeNackToken>());
-          qDebug() << "Nack token sent";
         }
       }
       if (mergePending) {
-        qDebug() << "Merge pending";
         if (hasNodeToken<MergeAckToken>(nextNode()->prevNodeDir)) {
-          qDebug() << "Received merge ack token";
-          successor = nextNode(true);
+          takeNodeToken<MergeAckToken>(nextNode()->prevNodeDir);
+          successor = nextNode();
           mergePending = false;
-          qDebug() << "Merged";
           passNodeToken<MergeCountToken>(prevNodeDir, std::make_shared<MergeCountToken>(-1, successor->count));
-          qDebug() << "Merge count token sent";
         }
         else if (hasNodeToken<MergeNackToken>(nextNode()->prevNodeDir)) {
-          qDebug() << "Received merge nack token";
+          takeNodeToken<MergeNackToken>(nextNode()->prevNodeDir);
           mergePending = false;
           passNodeToken<MergeNackToken>(prevNodeDir, std::make_shared<MergeNackToken>());
-          qDebug() << "Merge nack token forwarded";
         }
       }
     }
     else if (predecessor != nullptr && successor != nullptr) {
       // Internal node
-      qDebug() << "Internal node";
+      // Pass termination detection tokens
+      if (hasNodeToken<TerminationDetectionToken>(nextNode()->prevNodeDir)) {
+        qDebug() << "Internal node has termination detection token";
+        std::shared_ptr<TerminationDetectionToken> token = takeNodeToken<TerminationDetectionToken>(nextNode()->prevNodeDir);
+        bool hasMergeToken = false;
+        if (hasNodeToken<LexCompAttemptMergeToken>(predecessor->nextNodeDir)) {
+          hasMergeToken = true;
+        }
+        if (hasNodeToken<AttemptMergeToken>(predecessor->nextNodeDir)) {
+          hasMergeToken = true;
+        }
+        if (hasNodeToken<MergeRequestToken>(predecessor->nextNodeDir)) {
+          hasMergeToken = true;
+        }
+        if (hasNodeToken<MergeAckToken>(successor->prevNodeDir)) {
+          hasMergeToken = true;
+        }
+        if (hasNodeToken<MergeCountToken>(successor->prevNodeDir)) {
+          hasMergeToken = true;
+        }
+        if (hasMergeToken) {
+          if(token->traversed > 0) {
+            passNodeToken<TerminationDetectionReturnToken>(nextNodeDir, std::make_shared<TerminationDetectionReturnToken>(-1, token->counter, token->traversed+1, 0, false));
+          }
+        }
+        else {
+          qDebug() << "Passing termination detection token...";
+          passNodeToken<TerminationDetectionToken>(prevNodeDir, std::make_shared<TerminationDetectionToken>(-1, token->counter, token->ttl, token->traversed));
+        }
+      }
+      if (hasNodeToken<TerminationDetectionReturnToken>(prevNode()->nextNodeDir)) {
+        std::shared_ptr<TerminationDetectionReturnToken> token = takeNodeToken<TerminationDetectionReturnToken>(prevNode()->nextNodeDir);
+        passNodeToken<TerminationDetectionReturnToken>(nextNodeDir, std::make_shared<TerminationDetectionReturnToken>(-1, token->counter, token->ttl, token->traversed, token->termination));
+      }
+
       // Pass lexicographic comparison topkens
       if (hasNodeToken<LexCompCleanUpToken>(predecessor->nextNodeDir)) {
         // Pass cleanup tokens towards tail
         takeNodeToken<LexCompCleanUpToken>(predecessor->nextNodeDir);
         retrieved = false;
         passNodeToken<LexCompCleanUpToken>(nextNodeDir, std::make_shared<LexCompCleanUpToken>());
+        // intercept label tokens and remove them
+        while (hasNodeToken<LexCompReturnStretchLabelToken>(successor->prevNodeDir)) {
+          takeNodeToken<LexCompReturnStretchLabelToken>(successor->prevNodeDir);
+        }
+        while (hasNodeToken<LexCompEndOfNbrStretchToken>(successor->prevNodeDir)) {
+          takeNodeToken<LexCompEndOfNbrStretchToken>(successor->prevNodeDir);
+        }
+        while (hasNodeToken<LexCompNextLabelToken>(successor->prevNodeDir)) {
+          takeNodeToken<LexCompNextLabelToken>(successor->prevNodeDir);
+        }
+        while (hasNodeToken<LexCompEndOfStretchToken>(successor->prevNodeDir)) {
+          takeNodeToken<LexCompEndOfStretchToken>(successor->prevNodeDir);
+        }
       }
       if (hasNodeToken<LexCompCleanUpForNbrToken>(predecessor->nextNodeDir)) {
         takeNodeToken<LexCompCleanUpForNbrToken>(predecessor->nextNodeDir);
         retrievedForNbr = false;
         passNodeToken<LexCompCleanUpForNbrToken>(nextNodeDir, std::make_shared<LexCompCleanUpForNbrToken>());
+        // intercept label tokens for nbr and remove them
+        while (hasNodeToken<LexCompNextLabelForNbrToken>(successor->prevNodeDir)) {
+          takeNodeToken<LexCompNextLabelForNbrToken>(successor->prevNodeDir);
+        }
+        while (hasNodeToken<LexCompEndOfStretchForNbrToken>(successor->prevNodeDir)) {
+          takeNodeToken<LexCompEndOfStretchForNbrToken>(successor->prevNodeDir);
+        }
       }
       if (hasNodeToken<LexCompInitToken>(predecessor->nextNodeDir)) {
         // Pass init tokens towards clockwise adjacent stretch
@@ -1097,15 +1160,15 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
         takeNodeToken<LexCompNackToken>(successor->prevNodeDir);
         passNodeToken<LexCompNackToken>(prevNodeDir, std::make_shared<LexCompNackToken>());
       }
-      if (hasNodeToken<LexCompInterruptToken>(successor->prevNodeDir)) {
+      if (hasNodeToken<LexCompInterruptLeftToken>(successor->prevNodeDir)) {
         // Pass interrupt tokens in counter-clockwise direction
-        takeNodeToken<LexCompInterruptToken>(successor->prevNodeDir);
-        passNodeToken<LexCompInterruptToken>(prevNodeDir, std::make_shared<LexCompInterruptToken>());
+        takeNodeToken<LexCompInterruptLeftToken>(successor->prevNodeDir);
+        passNodeToken<LexCompInterruptLeftToken>(prevNodeDir, std::make_shared<LexCompInterruptLeftToken>());
       }
-      if (hasNodeToken<LexCompInterruptToken>(predecessor->nextNodeDir)) {
+      if (hasNodeToken<LexCompInterruptRightToken>(predecessor->nextNodeDir)) {
         // Pass interrupt tokens in clockwise direction
-        takeNodeToken<LexCompInterruptToken>(predecessor->nextNodeDir);
-        passNodeToken<LexCompInterruptToken>(nextNodeDir, std::make_shared<LexCompInterruptToken>());
+        takeNodeToken<LexCompInterruptRightToken>(predecessor->nextNodeDir);
+        passNodeToken<LexCompInterruptRightToken>(nextNodeDir, std::make_shared<LexCompInterruptRightToken>());
       }
       if (hasNodeToken<LexCompRetrieveNextLabelToken>(predecessor->nextNodeDir)) {
         // Pass retrieve internal label tokens
@@ -1212,6 +1275,54 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
   }
 }
 
+void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::lexCompCleanUp() {
+  firstLargerLabel = 0;
+  NbrLabel = 0;
+  internalLabel = 0;
+  requestedNbrLabel = false;
+  receivedNbrLabel = false;
+  requestedLabel = false;
+  receivedLabel = false;
+  lexCompInit = false;
+  lexicographicComparisonRight = false;
+  retrieved = false;
+  if (successor != nullptr) {
+    passNodeToken<LexCompCleanUpToken>(nextNodeDir, std::make_shared<LexCompCleanUpToken>());
+  }
+  countSent = false;
+  // intercept label tokens and remove them
+  while (hasNodeToken<LexCompReturnStretchLabelToken>(nextNode()->prevNodeDir)) {
+    takeNodeToken<LexCompReturnStretchLabelToken>(nextNode()->prevNodeDir);
+  }
+  while (hasNodeToken<LexCompEndOfNbrStretchToken>(nextNode()->prevNodeDir)) {
+    takeNodeToken<LexCompEndOfNbrStretchToken>(nextNode()->prevNodeDir);
+  }
+  while (hasNodeToken<LexCompNextLabelToken>(nextNode()->prevNodeDir)) {
+    takeNodeToken<LexCompNextLabelToken>(nextNode()->prevNodeDir);
+  }
+  while (hasNodeToken<LexCompEndOfStretchToken>(nextNode()->prevNodeDir)) {
+    takeNodeToken<LexCompEndOfStretchToken>(nextNode()->prevNodeDir);
+  }
+}
+
+void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::lexCompCleanUpForNbr() {
+  internalLabelForNbr = 0;
+  receivedLabelRequestFromNbr = false;
+  requestedLabelForNbr = false;
+  receivedLabelForNbr = false;
+  lexicographicComparisonLeft = false;
+  retrievedForNbr = false;
+  if (successor != nullptr) {
+    passNodeToken<LexCompCleanUpForNbrToken>(nextNodeDir, std::make_shared<LexCompCleanUpForNbrToken>());
+  }
+  while (hasNodeToken<LexCompNextLabelForNbrToken>(nextNode()->prevNodeDir)) {
+    takeNodeToken<LexCompNextLabelForNbrToken>(nextNode()->prevNodeDir);
+  }
+  while (hasNodeToken<LexCompEndOfStretchForNbrToken>(nextNode()->prevNodeDir)) {
+    takeNodeToken<LexCompEndOfStretchForNbrToken>(nextNode()->prevNodeDir);
+  }
+}
+
 void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::paintNode(
     const int color) {
   // paint a node
@@ -1229,6 +1340,49 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::paintNod
 template <class TokenType>
 bool LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::
 hasNodeToken(int dir, bool checkClone) const{
+  if (nextNodeClone && checkClone) {
+    LeaderElectionNode* clone = nextNode();
+    int cloneDir = dir;
+    if (dir == prevNodeDir) {
+      cloneDir = clone->prevNodeDir;
+    }
+    else if (dir == nextNodeDir) {
+      cloneDir = clone->nextNodeDir;
+    }
+    if (clone->hasNodeToken<TokenType>(cloneDir, false)) {
+      return true;
+    }
+  }
+  else if (prevNodeClone && checkClone) {
+    LeaderElectionNode* clone = prevNode();
+    int cloneDir = dir;
+    if (dir == prevNodeDir) {
+      cloneDir = clone->prevNodeDir;
+    }
+    else if (dir == nextNodeDir) {
+      cloneDir = clone->nextNodeDir;
+    }
+    if (clone->hasNodeToken<TokenType>(cloneDir, false)) {
+      return true;
+    }
+  }
+  auto prop = [dir,this](const std::shared_ptr<TokenType> token) {
+    return token->origin == dir && token->destination == nodeDir;
+  };
+  return particle->hasToken<TokenType>(prop);
+}
+
+template <class TokenType>
+std::shared_ptr<TokenType>
+LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::
+peekNodeToken(int dir, bool checkClone) const {
+  if (hasNodeToken<TokenType>(dir, false)) {
+    auto prop = [dir,this](const std::shared_ptr<TokenType> token) {
+      return token->origin == dir && token->destination == nodeDir;
+    };
+    return particle->peekAtToken<TokenType>(prop);
+  }
+  else {
     if (nextNodeClone && checkClone) {
       LeaderElectionNode* clone = nextNode();
       int cloneDir = dir;
@@ -1238,9 +1392,7 @@ hasNodeToken(int dir, bool checkClone) const{
       else if (dir == nextNodeDir) {
         cloneDir = clone->nextNodeDir;
       }
-      if (clone->hasNodeToken<TokenType>(cloneDir, false)) {
-        return true;
-      }
+      return clone->peekNodeToken<TokenType>(cloneDir, false);
     }
     else if (prevNodeClone && checkClone) {
       LeaderElectionNode* clone = prevNode();
@@ -1251,24 +1403,12 @@ hasNodeToken(int dir, bool checkClone) const{
       else if (dir == nextNodeDir) {
         cloneDir = clone->nextNodeDir;
       }
-      if (clone->hasNodeToken<TokenType>(cloneDir, false)) {
-        return true;
-      }
+      return clone->peekNodeToken<TokenType>(cloneDir, false);
     }
-    auto prop = [dir,this](const std::shared_ptr<TokenType> token) {
-      return token->origin == dir && token->destination == nodeDir;
-    };
-    return particle->hasToken<TokenType>(prop);
-}
-
-template <class TokenType>
-std::shared_ptr<TokenType>
-LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::
-peekNodeToken(int dir) const {
-  auto prop = [dir](const std::shared_ptr<TokenType> token) {
-    return token->origin == dir;
-  };
-  return particle->peekAtToken<TokenType>(prop);
+    else {
+      Q_ASSERT(false);
+    }
+  }
 }
 
 template <class TokenType>

@@ -169,7 +169,8 @@ protected:
    * LexCompRetrieveNextLabelForNbrToken : retrieves the label of the next internal node of a stretch for its neighbour
    * LexCompNextLabelForNbrToken : returns the label of the next internal node of a stretch for its neighbour
    * LexCompEndOfStretchForNbrToken : signals to the head that all labels have been retrieved for the neighbour
-   * LexCompInterruptToken : interrupts the lexicographic comparison process as result of a merge
+   * LexCompInterruptRightToken : interrupts the lexicographic comparison process with the clockwise adjacent stretch
+   * LexCompInterruptLeftToken : interrupts the lexicographic comparison process with the counter-clockwise adjacent stretch
    * LexCompCleanUpToken : sent from head to tail to reset 'retrieved' flags
    * LexCompCleanUpForNbrToken : sent from head to tail to reset 'retrievedForNbr' flags
    */
@@ -259,10 +260,14 @@ protected:
       this->destination = destination;
     }
   };
-  // Interrupt tokens are not of type LexCompToken, because otherwise they might be deleted
-  // by the cleanup process before they reach the other stretch
-  struct LexCompInterruptToken : public LeaderElectionToken {
-    LexCompInterruptToken(int origin = -1, int destination = -1) {
+  struct LexCompInterruptRightToken : public LexCompToken {
+    LexCompInterruptRightToken(int origin = -1, int destination = -1) {
+      this->origin = origin;
+      this->destination = destination;
+    }
+  };
+  struct LexCompInterruptLeftToken : public LexCompToken {
+    LexCompInterruptLeftToken(int origin = -1, int destination = -1) {
       this->origin = origin;
       this->destination = destination;
     }
@@ -279,7 +284,38 @@ protected:
       this->destination = destination;
     }
   };
-
+  /*
+   * Termination detection tokens
+   * 
+   * TerminationDetectionToken : sent by the initiator of termination detection
+   * TerminationDetectionReturnToken : sent back to the initiator
+   */
+  struct TerminationDetectionToken : public LeaderElectionToken {
+    int counter;
+    int ttl;
+    int traversed;
+    TerminationDetectionToken(int origin = -1, int counter = 0, int ttl = 0, int traversed = 0, int destination = -1) {
+      this->origin = origin;
+      this->destination = destination;
+      this->counter = counter;
+      this->ttl = ttl;
+      this->traversed = traversed;
+    }
+  };
+  struct TerminationDetectionReturnToken : public LeaderElectionToken {
+    int counter;
+    int ttl;
+    int traversed;
+    bool termination;
+    TerminationDetectionReturnToken(int origin = -1, int counter = 0, int ttl = 0, int traversed = 0, bool termination = false, int destination = -1) {
+      this->origin = origin;
+      this->destination = destination;
+      this->counter = counter;
+      this->ttl = ttl;
+      this->traversed = traversed;
+      this->termination = termination;
+    }
+  };
 
  private:
   friend class LeaderElectionStationaryDeterministicSystem;
@@ -342,6 +378,9 @@ protected:
     // Used by head node to denote whether it has sent a token to initialize lexicographic comparison
     bool lexCompInit = false;
 
+    // Used for lexicographic comparison to denote whether a merge attempt should be made at the end
+    bool lexCompTryMerge = false;
+
     // Used by head node to denote whether it is currently participating in lexicographic comparison
     bool lexicographicComparisonLeft = false;
 
@@ -389,8 +428,15 @@ protected:
     // Denotes whether this node's label has been retrieved for lexicographic comparison
     bool retrievedForNbr = false;
 
+    // Termination detection variables
+    bool terminationDetectionInitiated = false;
+
     // Executes one node activation.
     virtual void activate();
+
+    // Used to reset variables and remove tokens for lexicographic comparison
+    void lexCompCleanUp();
+    void lexCompCleanUpForNbr();
 
     // Function to draw a virtual node which is emulated by a particle.
     void paintNode(const int color);
@@ -400,7 +446,7 @@ protected:
     template <class TokenType>
     bool hasNodeToken(int dir, bool checkClone=true) const;
     template <class TokenType>
-    std::shared_ptr<TokenType> peekNodeToken(int dir) const;
+    std::shared_ptr<TokenType> peekNodeToken(int dir, bool checkClone=true) const;
     template <class TokenType>
     std::shared_ptr<TokenType> takeNodeToken(int dir, bool checkClone=true);
     template <class TokenType>
