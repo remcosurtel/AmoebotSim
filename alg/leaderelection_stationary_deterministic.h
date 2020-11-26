@@ -27,6 +27,8 @@ public:
     IdentificationLabeling,
     StretchExpansion,
     Demoted,
+    TreeFormation,
+    TreeComparison,
     Candidate,
     Leader,
     Finished
@@ -34,7 +36,73 @@ public:
 
   State state;
 
-  int currentNode;
+  // Variables for "trees to break symmetry" phase
+
+  // Stores the direction to the next particle of the stretch
+  // Used to communicate with other candidates
+  int nextDirCandidate;
+  // Stores the current number of remaining candidates
+  int numCandidates = 0;
+  // Stores the count of the head node for candidate particles
+  int headCount = 0;
+  // Denotes whether this particle is part of a tree
+  bool tree = false;
+  // Denotes whether the subtree rooted at this particle is fully formed
+  bool treeDone = false;
+  // Denotes the local direction to the parent particle.
+  int parent = -1;
+  // Set with 1 integer for each child particle
+  // Each integer denotes the local direction to the child particle
+  set<int> children;
+  // Set when childTokens are sent from candidate to avoid duplicates
+  bool childTokensSent = false;
+  // Set when TreeComparisonStartTokens and TreeFormationDoneTokens are sent
+  bool treeFormationDone = false;
+  // Stores the number of received treeFormationFinishedTokens
+  int treeFormationFinishedTokensReceived = 0;
+  // Denotes whether tree comparison can start
+  bool treeComparisonReady = false;
+  // Denotes whether this particle has already sent its own neighbourhood encoding
+  bool nbrhdEncodingSentRight = false;
+  bool nbrhdEncodingSentLeft = false;
+  // Stores the current neighbourhood encoding
+  string currentEncodingRight = "";
+  string currentEncodingLeft = "";
+  string currentEncodingNbr = "";
+  // Denotes whether a request for a new encoding has been received
+  bool nbrEncodingRequestReceived = false;
+  // Denotes whether a new encoding has been requested
+  bool encodingRequestedRight = false;
+  bool encodingRequestedLeft = false;
+  bool nbrEncodingRequested = false;
+  // Denotes whether the requested encoding has been received
+  bool encodingReceivedRight = false;
+  bool encodingReceivedLeft = false;
+  bool nbrEncodingReceived = false;
+  // Denotes whether this particle has exhausted its entire subtree 
+  // by retrieving neighborhood encodings from all particles.
+  bool treeExhaustedRight = false;
+  bool treeExhaustedLeft = false;
+  bool nbrTreeExhausted = false;
+  // Set of integers representing local directions to child particles.
+  // This is a subset of the set 'children'.
+  // Each child in this set has exhausted its entire subtree such that
+  // 'treeExhausted' is set to true.
+  set<int> childrenExhaustedRight;
+  set<int> childrenExhaustedLeft;
+  // Denotes the number of comparisonTokens from other candidates that have been received
+  int comparisonsReceived = 0;
+  // Denotes whether this particle has finished its comparison to the adjacent candidate
+  bool comparisonDone = false;
+  // Stores the result of a comparison
+  // -1 for smaller, 0 for equal, 1 for larger
+  int comparisonResult = 0;
+  // Denotes whether the result of the current comparison has been sent
+  bool comparisonSent = false;
+  // Stores the results of tree comparison for all candidates
+  // In clockwise direction, starting from the comparison of this candidate
+  // to its right neighbour
+  std::vector<int> comparisonResults = {};
 
   // Constructs a new particle with a node position for its head, a global
   // compass direction from its head to its tail (-1 if contracted), an offset
@@ -87,6 +155,17 @@ public:
   // particle.
   int getNumberOfNbrs() const;
 
+  // Returns the neighborhood encoding for this particle.
+  string getNeighborhoodEncoding();
+
+  // Used in tree comparison to determine the direction in which tokens should be forwarded
+  // so that they are passed along the boundary
+  int getNextDir(int prevDir);
+
+  // Calculates maximal non-descending sequence(s) of candidates ordered in clockwise direction
+  // Used in the tree comparison phase to eliminate candidates
+  set<std::vector<int>> getMaxNonDescSubSeq(std::vector<int> input);
+
 protected:
   // The LeaderElectionToken struct provides a general framework of any token
   // under the General Leader Election algorithm.
@@ -95,6 +174,98 @@ protected:
     // was received from.
     int origin;
     int destination;
+  };
+
+  // Used in tree formation to signal the parent particle.
+  struct ParentToken : public LeaderElectionToken {
+    ParentToken(int origin = -1) { this->origin = origin; }
+  };
+  // Used in tree formation to signal the child particle to join the tree
+  struct ChildToken : public LeaderElectionToken {
+    ChildToken(int origin = -1) { this->origin = origin; }
+  };
+  // Used to signal to childNodes that the comparison phase is going to begin
+  struct TreeComparisonStartToken : public LeaderElectionToken {
+    TreeComparisonStartToken(int origin = -1) { this->origin = origin; }
+  };
+  // Used to signal to candidates that the tree formation phase is finished
+  struct TreeFormationFinishedToken : public LeaderElectionToken {
+    int ttl;
+    int traversed;
+    TreeFormationFinishedToken(int origin = -1, int ttl = 0, int traversed = 0) {
+      this->origin = origin;
+      this->ttl = ttl;
+      this->traversed = traversed;
+    }
+  };
+  struct ComparisonResultToken : public LeaderElectionToken {
+    int ttl;
+    int traversed;
+    int result;
+    ComparisonResultToken(int origin = -1, int ttl = 0, int traversed = 0, int result = 0) {
+      this->origin = origin;
+      this->ttl = ttl;
+      this->traversed = traversed;
+      this->result = result;
+    }
+  };
+  struct RequestCandidateEncodingToken : public LeaderElectionToken {
+    int ttl;
+    int traversed;
+    RequestCandidateEncodingToken(int origin = -1, int ttl = 0, int traversed = 0) {
+      this->origin = origin;
+      this->ttl = ttl;
+      this->traversed = traversed;
+    }
+  };
+  struct CandidateEncodingToken : public LeaderElectionToken {
+    int ttl;
+    int traversed;
+    string encoding;
+    CandidateEncodingToken(int origin = -1, int ttl = 0, int traversed = 0, string encoding = "") {
+      this->origin = origin;
+      this->ttl = ttl;
+      this->traversed = traversed;
+      this->encoding = encoding;
+    }
+  };
+  struct CandidateTreeExhaustedToken : public LeaderElectionToken {
+    int ttl;
+    int traversed;
+    CandidateTreeExhaustedToken(int origin = -1, int ttl = 0, int traversed = 0) {
+      this->origin = origin;
+      this->ttl = ttl;
+      this->traversed = traversed;
+    }
+  };
+  struct RequestEncodingRightToken : public LeaderElectionToken {
+    RequestEncodingRightToken(int origin = -1) { this->origin = origin; }
+  };
+  struct RequestEncodingLeftToken : public LeaderElectionToken {
+    RequestEncodingLeftToken(int origin = -1) { this->origin = origin; }
+  };
+  struct EncodingRightToken : public LeaderElectionToken {
+    string encoding;
+    EncodingRightToken(int origin = -1, string encoding = "") {
+      this->origin = origin;
+      this->encoding = encoding;
+    }
+  };
+  struct EncodingLeftToken : public LeaderElectionToken {
+    string encoding;
+    EncodingLeftToken(int origin = -1, string encoding = "") {
+      this->origin = origin;
+      this->encoding = encoding;
+    }
+  };
+  struct SubTreeExhaustedRightToken : public LeaderElectionToken {
+    SubTreeExhaustedRightToken(int origin = -1) { this->origin = origin; }
+  };
+  struct SubTreeExhaustedLeftToken : public LeaderElectionToken {
+    SubTreeExhaustedLeftToken(int origin = -1) { this->origin = origin; }
+  };
+  struct CleanUpToken : public LeaderElectionToken {
+    CleanUpToken(int origin = -1) { this->origin = origin; }
   };
 
   // Used in stretch expansion to request a merge.
@@ -456,7 +627,7 @@ protected:
   };
 
   protected:
-   std::vector<LeaderElectionNode*> nodes;
+   std::vector<LeaderElectionNode*> nodes = {};
    std::array<int, 18> borderColorLabels;
    std::array<int, 6> borderPointColorLabels;
    std::array<int, 6> borderPointBetweenEdgeColorLabels;

@@ -45,7 +45,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
       return;
     }
     else if (numNbrs == 6) {
-      state = State::Finished;
+      state = State::Demoted;
     }
     else {
       // Initialize 6 nodes
@@ -94,7 +94,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
   }
   else if (state == State::StretchExpansion) {
     if (nodes.size() == 0) {
-      state = State::Finished;
+      state = State::Demoted;
       return;
     }
     // Wait for all neighbors to reach stretch expansion state.
@@ -102,6 +102,21 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
       if (hasNbrAtLabel(dir)) {
         LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(dir);
         if (nbr.state == State::IdentificationLabeling) {
+          return;
+        }
+        // If tree formation phase is starting, join tree
+        else if (nbr.state == State::Candidate || nbr.state == State::TreeFormation) {
+          for (LeaderElectionNode* node : nodes) {
+            if (node->predecessor == nullptr) {
+              // If this particle has a node that is the head of a stretch
+              // Then become a candidate
+              state = State::Candidate;
+              tree = true;
+              headCount = node->count;
+              return;
+            }
+          }
+          state = State::TreeFormation;
           return;
         }
       }
@@ -212,23 +227,822 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
       }
     }
   }
+  else if (state == State::Demoted) {
+    for (int dir = 0; dir < 6; dir++) {
+      if (hasNbrAtLabel(dir)) {
+        LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(dir);
+        // If tree formation phase is starting, change state
+        if (nbr.state == State::Candidate || (nbr.state == State::TreeFormation && nbr.tree)) {
+          state = State::TreeFormation;
+          tree = true;
+          parent = dir;
+          nbr.putToken(std::make_shared<ParentToken>(localToGlobalDir(parent)));
+          return;
+        }
+      }
+    }
+  }
+  else if (state == State::TreeFormation) {
+    qDebug() << "TreeFormation particle running...";
+    // process and pass cleanup tokens
+    if (hasToken<CleanUpToken>()) {
+      qDebug() << "Processing cleanup token...";
+      takeToken<CleanUpToken>();
+      treeDone = false;
+      nbrhdEncodingSentRight = false;
+      nbrhdEncodingSentLeft = false;
+      treeExhaustedRight = false;
+      treeExhaustedLeft = false;
+      childrenExhaustedRight = {};
+      childrenExhaustedLeft = {};
+      for (int childDir : children) {
+        LeaderElectionStationaryDeterministicParticle &child = nbrAtLabel(childDir);
+        child.putToken(std::make_shared<CleanUpToken>(localToGlobalDir(childDir)));
+      }
+      return;
+    }
+    // pass comparison result tokens
+    while (hasToken<ComparisonResultToken>()) {
+      std::shared_ptr<ComparisonResultToken> token = takeToken<ComparisonResultToken>();
+      int nextDir = getNextDir((globalToLocalDir(token->origin) + 3) % 6);
+      LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(nextDir);
+      nbr.putToken(std::make_shared<ComparisonResultToken>(localToGlobalDir(nextDir), token->ttl, token->traversed, token->result));
+    }
+    // receive parent tokens -> add to children
+    while (hasToken<ParentToken>()) {
+      qDebug() << "Processing parent token...";
+      std::shared_ptr<ParentToken> token = takeToken<ParentToken>();
+      int globalParentDir = token->origin;
+      int localParentDir = globalToLocalDir(globalParentDir);
+      int localChildDir = (localParentDir + 3) % 6;
+      children.insert(localChildDir);
+    }
+    // If not in tree, attempt to join a tree
+    if (!tree) {
+      qDebug() << "Not in tree...";
+      // for particles on the border
+      // receive childTokens from stretch predecessor to join the tree
+      // with the head of the stretch as root
+      if (hasToken<ChildToken>()) {
+        qDebug() << "Processing child token...";
+        std::shared_ptr<ChildToken> token = takeToken<ChildToken>();
+        int globalParentDir = token->origin;
+        int localParentDir = globalToLocalDir(globalParentDir);
+        parent = (localParentDir + 3) % 6;
+        LeaderElectionStationaryDeterministicParticle &p = nbrAtLabel(parent);
+        p.putToken(std::make_shared<ParentToken>(localToGlobalDir(parent)));
+        tree = true;
+
+        // Forward childToken to remainder of stretch if applicable
+        for (LeaderElectionNode* node : nodes) {
+          qDebug() << "Forwarding child token...";
+          if (node->prevNodeDir == parent) {
+            while (node->nextNodeDir < 0) {
+              node = node->nextNode();
+            }
+            LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(node->nextNodeDir);
+            if (!nbr.tree) {
+              nbr.putToken(std::make_shared<ChildToken>(localToGlobalDir(node->nextNodeDir)));
+            }
+            break;
+          }
+        }
+      }
+      // If not on the border, then join any adjacent particle's tree
+      else if (nodes.size() == 0) {
+        qDebug() << "Attempting to join a tree...";
+        for (int dir = 0; dir < 6; dir++) {
+          if (hasNbrAtLabel(dir)) {
+            LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(dir);
+            if (nbr.tree) {
+              parent = dir;
+              nbr.putToken(std::make_shared<ParentToken>(localToGlobalDir(parent)));
+              tree = true;
+              break;
+            }
+          }
+        }
+      }
+      // particles on the border that have not received a child token...
+      else {
+        int dir;
+        for (dir = 0; dir < 6; dir++) {
+          if (!hasNbrAtLabel(dir)) {
+            break;
+          }
+        }
+        while (!hasNbrAtLabel(dir)) {
+          dir = (dir + 1) % 6;
+        }
+        parent = dir;
+        LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(dir);
+        nbr.putToken(std::make_shared<ParentToken>(localToGlobalDir(parent)));
+        tree = true;
+      }
+    }
+    // if no non-tree neighbours and all children have treeDone -> set treeDone
+    if (!treeDone && tree) {
+      qDebug() << "In tree but not treeDone...";
+      bool done = true;
+      for (int dir = 0; dir < 6; dir++) {
+        if (hasNbrAtLabel(dir)) {
+          LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(dir);
+          if (!nbr.tree) {
+            done = false;
+          }
+        }
+      }
+      for (int dir : children) {
+        LeaderElectionStationaryDeterministicParticle &child = nbrAtLabel(dir);
+        if (!child.treeDone || child.hasToken<CleanUpToken>()) {
+          done = false;
+        }
+      }
+      if (done) {
+        treeDone = true;
+      }
+    }
+    // receive TreeComparisonStartTokens and advance to next phase
+    if (hasToken<TreeComparisonStartToken>()) {
+      qDebug() << "Processing tree comparison start token...";
+      takeToken<TreeComparisonStartToken>();
+      state = State::TreeComparison;
+      for(int childDir : children) {
+        LeaderElectionStationaryDeterministicParticle &child = nbrAtLabel(childDir);
+        child.putToken(std::make_shared<TreeComparisonStartToken>(localToGlobalDir(childDir)));
+      }
+    }
+    else if (parent >= 0 && treeDone) {
+      if ((nbrAtLabel(parent).treeFormationDone || nbrAtLabel(parent).state == State::TreeComparison)) {
+        qDebug() << "Changing state to TreeComparison...";
+        state = State::TreeComparison;
+        for(int childDir : children) {
+          LeaderElectionStationaryDeterministicParticle &child = nbrAtLabel(childDir);
+          child.putToken(std::make_shared<TreeComparisonStartToken>(localToGlobalDir(childDir)));
+        }
+      }
+    }
+    // receive and pass TreeFormationFinishedTokens
+    while (hasToken<TreeFormationFinishedToken>()) {
+      qDebug() << "Processing tree formation finished token...";
+      std::shared_ptr<TreeFormationFinishedToken> token = takeToken<TreeFormationFinishedToken>();
+      int nextDir = getNextDir((globalToLocalDir(token->origin) + 3) % 6);
+      LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(nextDir);
+      nbr.putToken(std::make_shared<TreeFormationFinishedToken>(localToGlobalDir(nextDir), token->ttl, token->traversed));
+    }
+  }
+  else if (state == State::Candidate) {
+    qDebug() << "Candidate particle running... (" << QString::number(head.x) << ", " << QString::number(head.y) << ")";
+    // Set the number of candidates when a candidate is activated for the first time
+    if (numCandidates == 0) {
+      numCandidates = 6 / headCount;
+    }
+    // receive parent tokens -> add to children
+    while (hasToken<ParentToken>()) {
+      qDebug() << "Processing parent token...";
+      std::shared_ptr<ParentToken> token = takeToken<ParentToken>();
+      int globalParentDir = token->origin;
+      int localParentDir = globalToLocalDir(globalParentDir);
+      int localChildDir = (localParentDir + 3) % 6;
+      children.insert(localChildDir);
+    }
+    // send childTokens to particle(s) containing next node of the stretch
+    if (!childTokensSent) {
+      qDebug() << "Sending child tokens...";
+      for (int i = 0; i < nodes.size(); i++) {
+        LeaderElectionNode* node = nodes[i];
+        if (node->predecessor == nullptr) {
+          while (node->nextNodeDir < 0) {
+            i = (i + 1) % nodes.size();
+            node = nodes[i];
+          }
+          LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(node->nextNodeDir);
+          nextDirCandidate = node->nextNodeDir;
+          if (!nbr.tree) {
+            nbr.putToken(std::make_shared<ChildToken>(localToGlobalDir(node->nextNodeDir)));
+          }
+          break;
+        }
+      }
+      childTokensSent = true;
+    }
+    if (treeComparisonReady) {
+      // Send comparison result token to all other candidates
+      if (comparisonDone && !comparisonSent) {
+        qDebug() << "Sending comparison result...";
+        LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(nextDirCandidate);
+        nbr.putToken(std::make_shared<ComparisonResultToken>(localToGlobalDir(nextDirCandidate), numCandidates, 1, comparisonResult));
+        comparisonSent = true;
+        std::vector<int> newVector(numCandidates, comparisonResult);
+        comparisonResults = newVector;
+        comparisonsReceived = 1;
+      }
+      // receive comparison results from other candidates
+      if (comparisonDone && comparisonsReceived < numCandidates) {
+        while (hasToken<ComparisonResultToken>()) {
+          qDebug() << "Processing comparison result token...";
+          std::shared_ptr<ComparisonResultToken> token = takeToken<ComparisonResultToken>();
+          int index = 1 + (token->ttl - (token->traversed + 1));
+          comparisonResults[index] = token->result;
+          comparisonsReceived += 1;
+          // pass the token on if necessary
+          if (token->traversed + 1 < token->ttl) {
+            LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(nextDirCandidate);
+            nbr.putToken(std::make_shared<ComparisonResultToken>(localToGlobalDir(nextDirCandidate), token->ttl, token->traversed+1, token->result));
+          }
+        }
+      }
+      // Eliminate candidates based on received comparison results
+      if (comparisonDone && comparisonsReceived == numCandidates) {
+        qDebug() << "Processing comparison results...";
+        for (int res : comparisonResults) {
+          qDebug() << QString::number(res);
+        }
+        set<std::vector<int>> seqs = getMaxNonDescSubSeq(comparisonResults);
+        for (std::vector<int> seq : seqs) {
+          qDebug() << "Processing maximal non-descending subsequence...";
+          for (int s : seq) {
+            qDebug() << QString::number(s);
+          }
+          // If all candidates are equal, there is unbreakable symmetry
+          if (seq.size() == numCandidates + 1) {
+            state = State::Finished;
+            return;
+          }
+          int candidate = seq[0]; // candidate to be eliminated
+          // If this candidate is eliminated, revoke candidacy, join tree
+          // of candidate to the left
+          if (candidate == 0) {
+            state = State::TreeFormation;
+            tree = true;
+            parent = (nextDirCandidate + 1) % 6;
+            while (!hasNbrAtLabel(parent)) {
+              parent = (parent + 1) % 6;
+            }
+            LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(parent);
+            nbr.putToken(std::make_shared<ParentToken>(localToGlobalDir(parent)));
+            for (int childDir : children) {
+              LeaderElectionStationaryDeterministicParticle &child = nbrAtLabel(childDir);
+              child.putToken(std::make_shared<CleanUpToken>(localToGlobalDir(childDir)));
+            }
+            treeDone = false;
+            treeFormationDone = false;
+            treeExhaustedRight = false;
+            treeExhaustedLeft = false;
+            encodingReceivedRight = false;
+            encodingReceivedLeft = false;
+            encodingRequestedRight = false;
+            encodingRequestedLeft = false;
+            nbrhdEncodingSentRight = false;
+            nbrhdEncodingSentLeft = false;
+            childrenExhaustedRight = {};
+            childrenExhaustedLeft = {};
+            return;
+          }
+          else {
+            numCandidates -= 1;
+            // If this candidate is now the last remaining candidate, become the leader
+            if (numCandidates == 1) {
+              state = State::Leader;
+              return;
+            }
+          }
+        }
+        // clean up comparison variables in candidate and subtree
+        treeDone = false;
+        treeFormationDone = false;
+        treeComparisonReady = false;
+        comparisonDone = false;
+        comparisonsReceived = 0;
+        comparisonSent = false;
+        childrenExhaustedRight = {};
+        childrenExhaustedLeft = {};
+        nbrhdEncodingSentRight = false;
+        nbrhdEncodingSentLeft = false;
+        nbrEncodingRequestReceived = false;
+        encodingRequestedRight = false;
+        encodingRequestedLeft = false;
+        nbrEncodingRequested = false;
+        encodingReceivedRight = false;
+        encodingReceivedLeft = false;
+        nbrEncodingReceived = false;
+        treeExhaustedRight = false;
+        treeExhaustedLeft = false;
+        nbrTreeExhausted = false;
+        for (int childDir : children) {
+          LeaderElectionStationaryDeterministicParticle &child = nbrAtLabel(childDir);
+          child.putToken(std::make_shared<CleanUpToken>(localToGlobalDir(childDir)));
+        }
+        return;
+      }
+      // receive encoding request tokens from other candidates
+      while (hasToken<RequestCandidateEncodingToken>()) {
+        qDebug() << "Processing candidate encoding request token...";
+        std::shared_ptr<RequestCandidateEncodingToken> token = takeToken<RequestCandidateEncodingToken>();
+        // If token is intended for other candidate, pass it on
+        if (token->traversed + 1 != token->ttl) {
+          LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(nextDirCandidate);
+          nbr.putToken(std::make_shared<RequestCandidateEncodingToken>(localToGlobalDir(nextDirCandidate), token->ttl, token->traversed+1));
+        }
+        else {
+          nbrEncodingRequestReceived = true;
+        }
+      }
+
+      // receive tree exhausted tokens from other candidates
+      while (hasToken<CandidateTreeExhaustedToken>()) {
+        qDebug() << "Processing candidate tree exhausted token...";
+        std::shared_ptr<CandidateTreeExhaustedToken> token = takeToken<CandidateTreeExhaustedToken>();
+        // if token is intended for other candidate, pass it on
+        if (token->traversed + 1 != token->ttl) {
+          LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(nextDirCandidate);
+          nbr.putToken(std::make_shared<CandidateTreeExhaustedToken>(localToGlobalDir(nextDirCandidate), token->ttl, token->traversed+1));
+        }
+        // If token is intended for this candidate, store it
+        else {
+          nbrTreeExhausted = true;
+          nbrEncodingReceived = true;
+          nbrEncodingRequested = false;
+        }
+      }
+      // Receive neighbourhood encodings from other candidates
+      while (hasToken<CandidateEncodingToken>()) {
+        qDebug() << "Processing candidate encoding token...";
+        std::shared_ptr<CandidateEncodingToken> token = takeToken<CandidateEncodingToken>();
+        // if token is intended for other candidate, pass it on
+        if (token->traversed + 1 != token->ttl) {
+          LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(nextDirCandidate);
+          nbr.putToken(std::make_shared<CandidateEncodingToken>(localToGlobalDir(nextDirCandidate), token->ttl, token->traversed+1, token->encoding));
+        }
+        // If token is intended for this candidate, store it
+        else {
+          currentEncodingNbr = token->encoding;
+          nbrEncodingReceived = true;
+          nbrEncodingRequested = false;
+        }
+      }
+
+      // request encoding from right stretch
+      if (!nbrEncodingRequested && !nbrEncodingReceived && !comparisonDone) {
+        qDebug() << "Requesting encoding from right stretch...";
+        LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(nextDirCandidate);
+        nbr.putToken(std::make_shared<RequestCandidateEncodingToken>(localToGlobalDir(nextDirCandidate), 2, 1));
+        nbrEncodingRequested = true;
+      }
+      // request encodings from tree for comparison with right stretch
+      if (!encodingRequestedRight && !encodingReceivedRight && !comparisonDone) {
+        qDebug() << "Requesting right encoding from tree...";
+        // first step: use own neighborhood encoding
+        if (!nbrhdEncodingSentRight) {
+          currentEncodingRight = getNeighborhoodEncoding();
+          encodingReceivedRight = true;
+          nbrhdEncodingSentRight = true;
+        }
+        // Otherwise request encoding from tree
+        else if (children.size() > 0) {
+          // Loop through children in direction of increasing labels
+          // Starting from empty node(s)
+          int childDir = nextDirCandidate;
+          while (children.find(childDir) == children.end() || childrenExhaustedRight.find(childDir) != childrenExhaustedRight.end()) {
+            childDir = (childDir + 1) % 6;
+            if (childDir == nextDirCandidate) {
+              break;
+            }
+          }
+          // tree exhausted
+          if (childDir == nextDirCandidate && childrenExhaustedRight.find(childDir) != childrenExhaustedRight.end()) {
+            treeExhaustedRight = true;
+            encodingRequestedRight = false;
+            encodingReceivedRight = true;
+          }
+          else {
+            LeaderElectionStationaryDeterministicParticle &child = nbrAtLabel(childDir);
+            child.putToken(std::make_shared<RequestEncodingRightToken>(localToGlobalDir(childDir)));
+            encodingRequestedRight = true;
+          }
+        }
+        else {
+          // tree exhausted
+          treeExhaustedRight = true;
+          encodingRequestedRight = false;
+          encodingReceivedRight = true;
+        }
+      }
+      // receive encodings from tree for comparison with right stretch
+      if (encodingRequestedRight && !encodingReceivedRight) {
+        if (hasToken<EncodingRightToken>()) {
+          qDebug() << "Processing right encoding token...";
+          std::shared_ptr<EncodingRightToken> token = takeToken<EncodingRightToken>();
+          currentEncodingRight = token->encoding;
+          encodingRequestedRight = false;
+          encodingReceivedRight = true;
+        }
+        // receive subtree exhausted tokens
+        else if (hasToken<SubTreeExhaustedRightToken>()) {
+          qDebug() << "Processing right subtree exhausted token...";
+          std::shared_ptr<SubTreeExhaustedRightToken> token = takeToken<SubTreeExhaustedRightToken>();
+          int dir = (globalToLocalDir(token->origin) + 3) % 6;
+          childrenExhaustedRight.insert(dir);
+          encodingRequestedRight = false;
+        }
+      }
+      // compare both encodings
+      if (encodingReceivedRight && nbrEncodingReceived) {
+        qDebug() << "Comparing encodings...";
+        // own tree exhausted -> smaller
+        if (treeExhaustedRight && !nbrTreeExhausted) {
+          comparisonResult = -1;
+        }
+        // right stretch tree exhausted -> larger
+        else if (!treeExhaustedRight && nbrTreeExhausted) {
+          comparisonResult = 1;
+        }
+        // both trees exhausted -> equal
+        else if (treeExhaustedRight && nbrTreeExhausted) {
+          comparisonResult = 0;
+        }
+        // neither exhausted -> compare encodings
+        else {
+          if (currentEncodingRight > currentEncodingNbr) {
+            comparisonResult = 1;
+          }
+          else if (currentEncodingRight < currentEncodingNbr) {
+            comparisonResult = -1;
+          }
+          else {
+            comparisonResult = 0;
+          }
+        }
+        // Encodings equal -> request next
+        if (comparisonResult == 0 && !treeExhaustedRight) {
+          encodingReceivedRight = false;
+          nbrEncodingReceived = false;
+        }
+        // equal trees -> comparison done
+        else if (comparisonResult == 0 && treeExhaustedRight) {
+          comparisonDone = true;
+        }
+        // Different encodings -> comparison done
+        else {
+          comparisonDone = true;
+        }
+        encodingReceivedRight = false;
+        nbrEncodingReceived = false;
+      }
+
+      // request encoding from tree for left stretch
+      if (nbrEncodingRequestReceived && !encodingRequestedLeft && !encodingReceivedLeft) {
+        qDebug() << "Requesting left encoding from tree...";
+        // first step: use own neighborhood encoding
+        if (!nbrhdEncodingSentLeft) {
+          currentEncodingLeft = getNeighborhoodEncoding();
+          encodingReceivedLeft = true;
+          nbrhdEncodingSentLeft = true;
+        }
+        // Otherwise request encoding from tree
+        else if (children.size() > 0) {
+          // Loop through children in direction of increasing labels
+          // Starting from empty node(s)
+          int childDir = nextDirCandidate;
+          while (children.find(childDir) == children.end() || childrenExhaustedLeft.find(childDir) != childrenExhaustedLeft.end()) {
+            childDir = (childDir + 1) % 6;
+            if (childDir == nextDirCandidate) {
+              break;
+            }
+          }
+          // tree exhausted
+          if (childDir == nextDirCandidate && childrenExhaustedLeft.find(childDir) != childrenExhaustedLeft.end()) {
+            treeExhaustedLeft = true;
+            encodingRequestedLeft = false;
+            encodingReceivedLeft = true;
+          }
+          else {
+            LeaderElectionStationaryDeterministicParticle &child = nbrAtLabel(childDir);
+            child.putToken(std::make_shared<RequestEncodingLeftToken>(localToGlobalDir(childDir)));
+            encodingRequestedLeft = true;
+          }
+        }
+        else {
+          // tree exhausted
+          treeExhaustedLeft = true;
+          encodingRequestedLeft = false;
+          encodingReceivedLeft = true;
+        }
+      }
+      // receive requested encoding from tree for left stretch
+      if (nbrEncodingRequestReceived && encodingRequestedLeft && !encodingReceivedLeft) {
+        if (hasToken<EncodingLeftToken>()) {
+          qDebug() << "Processing left encoding token...";
+          std::shared_ptr<EncodingLeftToken> token = takeToken<EncodingLeftToken>();
+          currentEncodingLeft = token->encoding;
+          encodingRequestedLeft = false;
+          encodingReceivedLeft = true;
+        }
+        // receive subtree exhausted tokens
+        else if (hasToken<SubTreeExhaustedLeftToken>()) {
+          qDebug() << "Processing left subtree exhausted token...";
+          std::shared_ptr<SubTreeExhaustedLeftToken> token = takeToken<SubTreeExhaustedLeftToken>();
+          int dir = (globalToLocalDir(token->origin) + 3) % 6;
+          childrenExhaustedLeft.insert(dir);
+          encodingRequestedLeft = false;
+        }
+      }
+      // send encodings to left stretch
+      if (nbrEncodingRequestReceived && encodingReceivedLeft) {
+        qDebug() << "Sending encoding to left stretch...";
+        if (!treeExhaustedLeft) {
+          LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(nextDirCandidate);
+          nbr.putToken(std::make_shared<CandidateEncodingToken>(localToGlobalDir(nextDirCandidate), numCandidates, 1, currentEncodingLeft));
+          nbrEncodingRequestReceived = false;
+          encodingReceivedLeft = false;
+        }
+        else {
+          LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(nextDirCandidate);
+          nbr.putToken(std::make_shared<CandidateTreeExhaustedToken>(localToGlobalDir(nextDirCandidate), numCandidates, 1));
+          nbrEncodingRequestReceived = false;
+          encodingReceivedLeft = false;
+        }
+      }
+    }
+    // if no non-tree neighbours and all children have treeDone -> set treeDone
+    if (!treeDone) {
+      qDebug() << "Evaluating treeDone...";
+      bool done = true;
+      for (int dir = 0; dir < 6; dir++) {
+        if (hasNbrAtLabel(dir)) {
+          LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(dir);
+          if (!nbr.tree) {
+            done = false;
+          }
+        }
+      }
+      for (int dir : children) {
+        LeaderElectionStationaryDeterministicParticle &child = nbrAtLabel(dir);
+        if (!child.treeDone || child.hasToken<CleanUpToken>()) {
+          done = false;
+        }
+      }
+      if (done) {
+        treeDone = true;
+      }
+    }
+    // when treeDone, send tokens throughout tree and to other candidates to move to comparison phase
+    if (treeDone && !treeFormationDone) {
+      qDebug() << "Sending TreeComparisonStartTokens...";
+      // send tokens to other candidates to communicate that tree formation is finished
+      LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(nextDirCandidate);
+      nbr.putToken(std::make_shared<TreeFormationFinishedToken>(localToGlobalDir(nextDirCandidate), numCandidates, 1));
+      treeFormationFinishedTokensReceived = 1;
+      // Send tokens to children to indicate that tree formation is done and comparison will start soon
+      for (int childDir : children) {
+        LeaderElectionStationaryDeterministicParticle &child = nbrAtLabel(childDir);
+        if (child.state != State::TreeComparison) {
+          child.putToken(std::make_shared<TreeComparisonStartToken>(localToGlobalDir(childDir)));
+        }
+      }
+      treeFormationDone = true;
+      qDebug() << "Tree formation done";
+    }
+    // receive TreeFormationFinishedTokens and pass them on if applicable
+    while (hasToken<TreeFormationFinishedToken>() && treeFormationDone && !treeComparisonReady) {
+      qDebug() << "Processing TreeFormationFinishedToken...";
+      std::shared_ptr<TreeFormationFinishedToken> token = takeToken<TreeFormationFinishedToken>();
+      treeFormationFinishedTokensReceived += 1;
+      // pass token if necessary
+      if (token->traversed + 1 < token->ttl) {
+        LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(nextDirCandidate);
+        nbr.putToken(std::make_shared<TreeFormationFinishedToken>(localToGlobalDir(nextDirCandidate), token->ttl, token->traversed+1));
+      }
+    }
+    if (treeFormationFinishedTokensReceived >= numCandidates) {
+      treeComparisonReady = true;
+      treeFormationFinishedTokensReceived = 0;
+      qDebug() << "Ready for tree comparison";
+    }
+  }
+  else if (state == State::TreeComparison) {
+    qDebug() << "TreeComparison particle running...";
+    if (!treeDone) {
+      state = State::TreeFormation;
+    }
+    // process and pass cleanup tokens
+    if (hasToken<CleanUpToken>()) {
+      takeToken<CleanUpToken>();
+      treeDone = false;
+      state = State::TreeFormation;
+      nbrhdEncodingSentRight = false;
+      nbrhdEncodingSentLeft = false;
+      treeExhaustedRight = false;
+      treeExhaustedLeft = false;
+      childrenExhaustedRight = {};
+      childrenExhaustedLeft = {};
+      for (int childDir : children) {
+        LeaderElectionStationaryDeterministicParticle &child = nbrAtLabel(childDir);
+        child.putToken(std::make_shared<CleanUpToken>(localToGlobalDir(childDir)));
+      }
+      return;
+    }
+    // pass tree formation finished tokens
+    while (hasToken<TreeFormationFinishedToken>()) {
+      std::shared_ptr<TreeFormationFinishedToken> token = takeToken<TreeFormationFinishedToken>();
+      int nextDir = getNextDir((globalToLocalDir(token->origin) + 3) % 6);
+      LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(nextDir);
+      nbr.putToken(std::make_shared<TreeFormationFinishedToken>(localToGlobalDir(nextDir), token->ttl, token->traversed));
+    }
+    // pass comparison result tokens
+    while (hasToken<ComparisonResultToken>()) {
+      std::shared_ptr<ComparisonResultToken> token = takeToken<ComparisonResultToken>();
+      int nextDir = getNextDir((globalToLocalDir(token->origin) + 3) % 6);
+      LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(nextDir);
+      nbr.putToken(std::make_shared<ComparisonResultToken>(localToGlobalDir(nextDir), token->ttl, token->traversed, token->result));
+    }
+    // pass candidate encoding requests
+    while (hasToken<RequestCandidateEncodingToken>()) {
+      std::shared_ptr<RequestCandidateEncodingToken> token = takeToken<RequestCandidateEncodingToken>();
+      int nextDir = getNextDir((globalToLocalDir(token->origin) + 3) % 6);
+      LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(nextDir);
+      nbr.putToken(std::make_shared<RequestCandidateEncodingToken>(localToGlobalDir(nextDir), token->ttl, token->traversed));
+    }
+    // pass candidate tree exhausted tokens
+    while (hasToken<CandidateTreeExhaustedToken>()) {
+      std::shared_ptr<CandidateTreeExhaustedToken> token = takeToken<CandidateTreeExhaustedToken>();
+      int nextDir = getNextDir((globalToLocalDir(token->origin) + 3) % 6);
+      LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(nextDir);
+      nbr.putToken(std::make_shared<CandidateTreeExhaustedToken>(localToGlobalDir(nextDir), token->ttl, token->traversed));
+    }
+    // pass candidate encoding tokens
+    while (hasToken<CandidateEncodingToken>()) {
+      std::shared_ptr<CandidateEncodingToken> token = takeToken<CandidateEncodingToken>();
+      int nextDir = getNextDir((globalToLocalDir(token->origin) + 3) % 6);
+      LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(nextDir);
+      nbr.putToken(std::make_shared<CandidateEncodingToken>(localToGlobalDir(nextDir), token->ttl, token->traversed, token->encoding));
+    }
+    // process and/or pass right encoding requests
+    if (hasToken<RequestEncodingRightToken>()) {
+      std::shared_ptr<RequestEncodingRightToken> token = takeToken<RequestEncodingRightToken>();
+      // first step: use own neighbourhood encoding
+      if (!nbrhdEncodingSentRight) {
+        currentEncodingRight = getNeighborhoodEncoding();
+        encodingReceivedRight = true;
+        nbrhdEncodingSentRight = true;
+      }
+      // Otherwise request encoding from tree
+      else if (children.size() > 0) {
+        // Loop through children in direction of increasing labels
+        // Starting from empty node(s)
+        int nextDir = getNextDir((globalToLocalDir(token->origin) + 3) % 6);
+        int childDir = nextDir;
+        while (children.find(childDir) == children.end() || childrenExhaustedRight.find(childDir) != childrenExhaustedRight.end()) {
+          childDir = (childDir + 1) % 6;
+          if (childDir == nextDir) {
+            break;
+          }
+        }
+        // tree exhausted
+        if (childDir == nextDir && childrenExhaustedRight.find(childDir) != childrenExhaustedRight.end()) {
+          treeExhaustedRight = true;
+          encodingReceivedRight = true;
+        }
+        else {
+          LeaderElectionStationaryDeterministicParticle &child = nbrAtLabel(childDir);
+          child.putToken(std::make_shared<RequestEncodingRightToken>(localToGlobalDir(childDir)));
+          encodingRequestedRight = true;
+        }
+      }
+      else {
+        // tree exhausted
+        treeExhaustedRight = true;
+        encodingReceivedRight = true;
+      }
+    }
+    // receive encodings from tree for comparison with right stretch
+    if (encodingRequestedRight && !encodingReceivedRight) {
+      if (hasToken<EncodingRightToken>()) {
+        std::shared_ptr<EncodingRightToken> token = takeToken<EncodingRightToken>();
+        currentEncodingRight = token->encoding;
+        encodingRequestedRight = false;
+        encodingReceivedRight = true;
+      }
+      // receive subtree exhausted tokens
+      else if (hasToken<SubTreeExhaustedRightToken>()) {
+        std::shared_ptr<SubTreeExhaustedRightToken> token = takeToken<SubTreeExhaustedRightToken>();
+        int dir = (globalToLocalDir(token->origin) + 3) % 6;
+        childrenExhaustedRight.insert(dir);
+        encodingRequestedRight = false;
+      }
+    }
+    // send received encodings towards root
+    if (encodingReceivedRight) {
+      // if tree exhausted, send subtree exhausted token
+      if (treeExhaustedRight) {
+        LeaderElectionStationaryDeterministicParticle &p = nbrAtLabel(parent);
+        p.putToken(std::make_shared<SubTreeExhaustedRightToken>(localToGlobalDir(parent)));
+      }
+      else {
+        LeaderElectionStationaryDeterministicParticle &p = nbrAtLabel(parent);
+        p.putToken(std::make_shared<EncodingRightToken>(localToGlobalDir(parent), currentEncodingRight));
+      }
+      encodingReceivedRight = false;
+    }
+    // process and/or pass left encoding requests
+    if (hasToken<RequestEncodingLeftToken>()) {
+      std::shared_ptr<RequestEncodingLeftToken> token = takeToken<RequestEncodingLeftToken>();
+      // first step: use own neighbourhood encoding
+      if (!nbrhdEncodingSentLeft) {
+        currentEncodingLeft = getNeighborhoodEncoding();
+        encodingReceivedLeft = true;
+        nbrhdEncodingSentLeft = true;
+      }
+      // Otherwise request encoding from tree
+      else if (children.size() > 0) {
+        // Loop through children in direction of increasing labels
+        // Starting from empty node(s)
+        int nextDir = getNextDir((globalToLocalDir(token->origin) + 3) % 6);
+        int childDir = nextDir;
+        while (children.find(childDir) == children.end() || childrenExhaustedLeft.find(childDir) != childrenExhaustedLeft.end()) {
+          childDir = (childDir + 1) % 6;
+          if (childDir == nextDir) {
+            break;
+          }
+        }
+        // tree exhausted
+        if (childDir == nextDir && childrenExhaustedLeft.find(childDir) != childrenExhaustedLeft.end()) {
+          treeExhaustedLeft = true;
+          encodingReceivedLeft = true;
+        }
+        else {
+          LeaderElectionStationaryDeterministicParticle &child = nbrAtLabel(childDir);
+          child.putToken(std::make_shared<RequestEncodingLeftToken>(localToGlobalDir(childDir)));
+          encodingRequestedLeft = true;
+        }
+      }
+      else {
+        // tree exhausted
+        treeExhaustedLeft = true;
+        encodingReceivedLeft = true;
+      }
+    }
+    // receive encodings from tree for comparison with left stretch
+    if (encodingRequestedLeft && !encodingReceivedLeft) {
+      if (hasToken<EncodingLeftToken>()) {
+        std::shared_ptr<EncodingLeftToken> token = takeToken<EncodingLeftToken>();
+        currentEncodingLeft = token->encoding;
+        encodingRequestedLeft = false;
+        encodingReceivedLeft = true;
+      }
+      // receive subtree exhausted tokens
+      else if (hasToken<SubTreeExhaustedLeftToken>()) {
+        std::shared_ptr<SubTreeExhaustedLeftToken> token = takeToken<SubTreeExhaustedLeftToken>();
+        int dir = (globalToLocalDir(token->origin) + 3) % 6;
+        childrenExhaustedLeft.insert(dir);
+        encodingRequestedLeft = false;
+      }
+    }
+    // send received encodings towards root
+    if (encodingReceivedLeft) {
+      // if tree exhausted, send subtree exhausted token
+      if (treeExhaustedLeft) {
+        LeaderElectionStationaryDeterministicParticle &p = nbrAtLabel(parent);
+        p.putToken(std::make_shared<SubTreeExhaustedLeftToken>(localToGlobalDir(parent)));
+      }
+      else {
+        LeaderElectionStationaryDeterministicParticle &p = nbrAtLabel(parent);
+        p.putToken(std::make_shared<EncodingLeftToken>(localToGlobalDir(parent), currentEncodingLeft));
+      }
+      encodingReceivedLeft = false;
+    }
+  }
   return;
 }
 
 int LeaderElectionStationaryDeterministicParticle::headMarkDir() const {
-  return -1;
-  // return globalToLocalDir(0);
+  return parent;
 }
 
 int LeaderElectionStationaryDeterministicParticle::headMarkColor() const {
   if (state == State::IdentificationLabeling) {
     return 0x7e7e7e; // gray
   }
-  else if (state == State::Finished) {
+  else if (state == State::Demoted) {
     return 0xd2d2d2; // light gray
+  }
+  else if (state == State::Finished) {
+    return 0xff0000; // red
   }
   else if (state == State::Leader) {
     return 0x00ff00; // green
+  }
+  else if (state == State::Candidate) {
+    if (treeComparisonReady) {
+      return 0x5a2d00; // brown
+    }
+    return 0xff9b00; // gold
+  }
+  else if (state == State::TreeFormation) {
+    return 0x00b000; // green
+  }
+  else if (state == State::TreeComparison) {
+    return 0x006100; // dark green
   }
   else {
     return -1;
@@ -274,57 +1088,82 @@ QString LeaderElectionStationaryDeterministicParticle::inspectionText() const {
           QString::number(countTokens<LexCompToken>()) + "\n";
   text += "\n\n";
 
-  for (int i = 0; i < nodes.size(); i++) {
-    LeaderElectionNode* node = nodes.at(i);
-    text += "Node, dir: " + QString::number(i) + ", " + QString::number(node->nodeDir) + "\n";
-    text += "Global dir: " + QString::number(localToGlobalDir(node->nodeDir)) + "\n";
-    if (node->nextNodeClone) {
-      text += "Clone: next\n";
-    }
-    else if (node->prevNodeClone) {
-      text += "Clone: prev\n";
-    }
-    else {
-      text += "Clone: N/A\n";
-    }
-    text += "Next, prev node dir: " + QString::number(node->nextNodeDir) + ", " + QString::number(node->prevNodeDir) + "\n";
-    text += "Unary label: " + QString::number(node->unaryLabel) + "\n";
-    text += "Head: ";
-    if (node->predecessor == nullptr) {
-      text += "true\n";
-    }
-    else {
-      text += "false\n";
-    }
-    text += "Tail: ";
-    if (node->successor == nullptr) {
-      text += "true\n";
-    }
-    else {
-      text += "false\n";
-    }
-    text += "Count: " + QString::number(node->count) + "\n";
-    if (node->mergePending) {
-      text += "Merge pending: true\n";
-    }
-    else {
-      text += "Merge pending: false\n";
-    }
-    if (node->predecessor == nullptr) {
-      if (node->lexicographicComparisonLeft && node->lexicographicComparisonRight){
-        text += "Lexicographic comparison: left & right\n";
+  if (state == State::StretchExpansion) {
+    for (int i = 0; i < nodes.size(); i++) {
+      LeaderElectionNode* node = nodes.at(i);
+      text += "Node, dir: " + QString::number(i) + ", " + QString::number(node->nodeDir) + "\n";
+      text += "Global dir: " + QString::number(localToGlobalDir(node->nodeDir)) + "\n";
+      if (node->nextNodeClone) {
+        text += "Clone: next\n";
       }
-      else if (node->lexicographicComparisonRight) {
-        text += "Lexicographic comparison: right\n";
-      }
-      else if (node->lexicographicComparisonLeft) {
-        text += "Lexicographic comparison: left\n";
+      else if (node->prevNodeClone) {
+        text += "Clone: prev\n";
       }
       else {
-        text += "Lexicographic comparison: false\n";
+        text += "Clone: N/A\n";
       }
+      text += "Next, prev node dir: " + QString::number(node->nextNodeDir) + ", " + QString::number(node->prevNodeDir) + "\n";
+      text += "Unary label: " + QString::number(node->unaryLabel) + "\n";
+      text += "Head: ";
+      if (node->predecessor == nullptr) {
+        text += "true\n";
+      }
+      else {
+        text += "false\n";
+      }
+      text += "Tail: ";
+      if (node->successor == nullptr) {
+        text += "true\n";
+      }
+      else {
+        text += "false\n";
+      }
+      text += "Count: " + QString::number(node->count) + "\n";
+      if (node->mergePending) {
+        text += "Merge pending: true\n";
+      }
+      else {
+        text += "Merge pending: false\n";
+      }
+      if (node->predecessor == nullptr) {
+        if (node->lexicographicComparisonLeft && node->lexicographicComparisonRight){
+          text += "Lexicographic comparison: left & right\n";
+        }
+        else if (node->lexicographicComparisonRight) {
+          text += "Lexicographic comparison: right\n";
+        }
+        else if (node->lexicographicComparisonLeft) {
+          text += "Lexicographic comparison: left\n";
+        }
+        else {
+          text += "Lexicographic comparison: false\n";
+        }
+      }
+      text += "\n";
     }
-    text += "\n";
+  }
+  else {
+    text += "numCandidates: " + QString::number(numCandidates) + "\n";
+    text += "nextDirCandidate: " + QString::number(nextDirCandidate) + "\n";
+    text += "parent: " + QString::number(parent) + "\n";
+    if (tree) {
+      text += "tree: true\n";
+    }
+    else {
+      text += "tree: false\n";
+    }
+    if (treeDone) {
+      text += "treeDone: true\n";
+    }
+    else {
+      text += "treeDone: false\n";
+    }
+    if (treeFormationDone) {
+      text += "treeFormationDone: true\n";
+    }
+    else {
+      text += "treeFormationDone: false\n";
+    }
   }
 
   return text;
@@ -354,6 +1193,65 @@ int LeaderElectionStationaryDeterministicParticle::getNumberOfNbrs() const {
     }
   }
   return count;
+}
+
+string LeaderElectionStationaryDeterministicParticle::getNeighborhoodEncoding() {
+  string result = "";
+  for (int dir = 0; dir < 6; ++dir) {
+    if (hasNbrAtLabel(dir)) {
+      LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(dir);
+      if (nbr.state == State::Candidate) {
+        result = result + "L";
+      } else if (dir == parent) {
+        result = result + "P";
+      } else if (children.find(dir) != children.end()) {
+        result = result + "C";
+      } else {
+        result = result + "N";
+      }
+    } else {
+      result = result + "N";
+    }
+  }
+  return result;
+}
+
+int LeaderElectionStationaryDeterministicParticle::getNextDir(int prevDir) {
+  int nextDir = (prevDir + 5) % 6;
+  while (!hasNbrAtLabel(nextDir)) {
+    nextDir = (nextDir + 5) % 6;
+  }
+  return nextDir;
+}
+
+set<std::vector<int>> LeaderElectionStationaryDeterministicParticle::getMaxNonDescSubSeq(std::vector<int> input) {
+  set<std::vector<int>> results = {{0}};
+  for (int i = 0; i < input.size(); i++) {
+    int comp = input[i];
+    // If this comparison is ">", then a maximal non-descending subsequence
+    // cannot start at this candidate
+    if (comp == 1) {
+      continue;
+    }
+    // If comparison is "=" or "<", then compute the subsequence starting at this candidate
+    else {
+      int index = (i + 1) % input.size();
+      std::vector<int> sequence = {i, index};
+      while (input[index] < 1 && index != i) {
+        index = (index + 1) % input.size();
+        sequence.push_back(index);
+      }
+      // If this sequence is the same as the largest so far, add it to the set
+      if (sequence.size() == results.begin()->size()) {
+        results.insert(sequence);
+      }
+      // If this sequence is larger, replace the set
+      else if (sequence.size() > results.begin()->size()) {
+        results = {sequence};
+      }
+    }
+  }
+  return results;
 }
 
 //----------------------------END PARTICLE CODE----------------------------
@@ -417,8 +1315,10 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
               else {
                 // Multiple lexicographically equal stretches covering the border
                 // Move to next state -> Trees to break symmetry
-                // TODO: Trees to break symmetry
                 qDebug() << "Trees to break symmetry";
+                particle->state = State::Candidate;
+                particle->tree = true;
+                particle->headCount = count;
                 terminationDetectionInitiated = false;
                 return;
               }
@@ -638,7 +1538,7 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
                 passNodeToken<TerminationDetectionToken>(prevNodeDir, std::make_shared<TerminationDetectionToken>(-1, count, 6/count, 0));
                 terminationDetectionInitiated = true;
               }
-              else if (count == 6 && !terminationDetectionInitiated) {
+              else if (count == 6) {
                 // Border covered by 1 stretch of count 6
                 qDebug() << "Lexicographically equal with count 6 -> terminating...";
                 particle->state = State::Leader;
@@ -1657,7 +2557,7 @@ bool LeaderElectionStationaryDeterministicSystem::hasTerminated() const {
 
   for (auto p : particles) {
     auto hp = dynamic_cast<LeaderElectionStationaryDeterministicParticle *>(p);
-    if (hp->state == LeaderElectionStationaryDeterministicParticle::State::Leader) {
+    if (hp->state == LeaderElectionStationaryDeterministicParticle::State::Leader || hp->state == LeaderElectionStationaryDeterministicParticle::State::Finished) {
       return true;
     }
   }
