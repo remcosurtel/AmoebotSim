@@ -295,13 +295,13 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
 
         // Forward childToken to remainder of stretch if applicable
         for (LeaderElectionNode* node : nodes) {
-          qDebug() << "Forwarding child token...";
           if (node->prevNodeDir == parent) {
             while (node->nextNodeDir < 0) {
               node = node->nextNode();
             }
             LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(node->nextNodeDir);
             if (!nbr.tree) {
+              qDebug() << "Forwarding child token...";
               nbr.putToken(std::make_shared<ChildToken>(localToGlobalDir(node->nextNodeDir)));
             }
             break;
@@ -353,6 +353,9 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
         }
       }
       for (int dir : children) {
+        if (dir == parent) {
+          continue;
+        }
         LeaderElectionStationaryDeterministicParticle &child = nbrAtLabel(dir);
         if (!child.treeDone || child.hasToken<CleanUpToken>()) {
           done = false;
@@ -379,6 +382,23 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
         for(int childDir : children) {
           LeaderElectionStationaryDeterministicParticle &child = nbrAtLabel(childDir);
           child.putToken(std::make_shared<TreeComparisonStartToken>(localToGlobalDir(childDir)));
+        }
+        return;
+      }
+      if (children.find(parent) != children.end()) {
+        for (int dir = 0; dir < 6; dir++) {
+          if (hasNbrAtLabel(dir)) {
+            LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(dir);
+            if (nbr.state == State::TreeComparison || nbr.treeFormationDone) {
+              qDebug() << "Changing state to TreeComparison...";
+              state = State::TreeComparison;
+              for(int childDir : children) {
+                LeaderElectionStationaryDeterministicParticle &child = nbrAtLabel(childDir);
+                child.putToken(std::make_shared<TreeComparisonStartToken>(localToGlobalDir(childDir)));
+              }
+              return;
+            }
+          }
         }
       }
     }
@@ -1356,11 +1376,13 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
         qDebug() << "Processing interrupt token from right...";
         takeNodeToken<LexCompInterruptLeftToken>(nextNode()->prevNodeDir);
         lexCompCleanUp();
+        return;
       }
       if (hasNodeToken<LexCompInterruptRightToken>(prevNode()->nextNodeDir)) {
         qDebug() << "Processing interrupt token from left...";
         takeNodeToken<LexCompInterruptRightToken>(prevNode()->nextNodeDir);
         lexCompCleanUpForNbr();
+        return;
       }
       // If init token received, send ack or nack token
       if (hasNodeToken<LexCompInitToken>(prevNode()->nextNodeDir)) {
