@@ -12,6 +12,7 @@
 #include <map>
 #include <set>
 #include <vector>
+#include <random>
 
 #include <QString>
 
@@ -40,6 +41,13 @@ class AmoebotSystem : public System, public RandomNumberGenerator {
   // particle occupying the specified node if such a particle exists.
   void activate() final;
   void activateParticleAt(Node node) final;
+
+  // This variable can be set to true to change the functionality of the 
+  // activate function. Instead of activating a random particle, it will
+  // activate the next particle in a random permutation of the particles.
+  bool randomPermutationScheduler = false;
+  int permutationIndex = 0;
+  std::default_random_engine rng;
 
   // Returns the number of particles in the system.
   unsigned int size() const final;

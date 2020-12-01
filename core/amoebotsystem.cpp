@@ -6,6 +6,7 @@
 
 #include <QDateTime>
 #include <QtGlobal>
+#include <random>
 
 #include "core/amoebotparticle.h"
 
@@ -36,9 +37,25 @@ AmoebotSystem::~AmoebotSystem() {
 }
 
 void AmoebotSystem::activate() {
-  int rand = randInt(0, particles.size());
-  particles.at(rand)->activate();
-  registerActivation(particles.at(rand));
+  if (!randomPermutationScheduler) {
+    // default behaviour: activate random particle
+    int rand = randInt(0, particles.size());
+    particles.at(rand)->activate();
+    registerActivation(particles.at(rand));
+  }
+  else {
+    // modified behavior: activate the next particle 
+    // in a random permutation of the particles
+    if (permutationIndex == 0) {
+      std::shuffle(std::begin(particles), std::end(particles), rng);
+    }
+    particles.at(permutationIndex)->activate();
+    registerActivation(particles.at(permutationIndex));
+    permutationIndex += 1;
+    if (permutationIndex >= particles.size()) {
+      permutationIndex = 0;
+    }
+  }
 }
 
 void AmoebotSystem::activateParticleAt(Node node) {

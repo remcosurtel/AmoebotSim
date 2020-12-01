@@ -1304,6 +1304,8 @@ LeaderElectionErosionSystem::LeaderElectionErosionSystem(int numParticles) {
 
   double holeProb = 0.0;
 
+  randomPermutationScheduler = true;
+
   // Insert the seed at (0,0).
   insert(new LeaderElectionErosionParticle(
       Node(0, 0), -1, randDir(), *this,

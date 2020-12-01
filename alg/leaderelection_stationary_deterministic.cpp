@@ -2524,6 +2524,8 @@ LeaderElectionStationaryDeterministicSystem::LeaderElectionStationaryDeterminist
 
   double holeProb = 0.0;
 
+  randomPermutationScheduler = true;
+
   // Insert the seed at (0,0).
   insert(new LeaderElectionStationaryDeterministicParticle(
       Node(0, 0), -1, randDir(), *this,
