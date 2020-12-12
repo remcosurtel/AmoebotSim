@@ -52,6 +52,10 @@ void AmoebotSystem::activate() {
     particles.at(permutationIndex)->activate();
     registerActivation(particles.at(permutationIndex));
     permutationIndex += 1;
+    double rndDouble = randDouble(0.0, 1.0);
+    if (rndDouble < randomReshuffleProb) {
+      std::shuffle(std::begin(particles), std::end(particles), rng);
+    }
     if (permutationIndex >= particles.size()) {
       permutationIndex = 0;
     }

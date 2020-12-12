@@ -14,6 +14,7 @@
 #include "alg/shapeformation.h"
 #include "alg/leaderelection_erosion.h"
 #include "alg/leaderelection_stationary_deterministic.h"
+#include "alg/leaderelection_deterministic.h"
 
 Algorithm::Algorithm(QString name, QString signature)
     : _name(name),
@@ -160,31 +161,45 @@ void LeaderElectionAlg::instantiate(const int numParticles,
 }
 
 LeaderElectionErosionAlg::LeaderElectionErosionAlg() :
-    Algorithm("Leader Election by Erosion", "leaderelection_erosion") {
-    addParameter("# Particles", "100");
+  Algorithm("Leader Election by Erosion", "leaderelection_erosion") {
+  addParameter("# Particles", "100");
 }
 
 void LeaderElectionErosionAlg::instantiate(const int numParticles) {
-    if (numParticles <= 0) {
-        emit log("# particles must be > 0", true);
-    }
-    else {
-        emit setSystem(std::make_shared<LeaderElectionErosionSystem>(numParticles));
-    }
+  if (numParticles <= 0) {
+    emit log("# particles must be > 0", true);
+  }
+  else {
+    emit setSystem(std::make_shared<LeaderElectionErosionSystem>(numParticles));
+  }
 }
 
 LeaderElectionStationaryDeterministicAlg::LeaderElectionStationaryDeterministicAlg() :
-    Algorithm("Stationary Deterministic Leader Election", "leaderelection_stationary_deterministic") {
-    addParameter("# Particles", "100");
+  Algorithm("Stationary Deterministic Leader Election", "leaderelection_stationary_deterministic") {
+  addParameter("# Particles", "100");
 }
 
 void LeaderElectionStationaryDeterministicAlg::instantiate(const int numParticles) {
-    if (numParticles <= 0) {
-        emit log("# particles must be > 0", true);
-    }
-    else {
-        emit setSystem(std::make_shared<LeaderElectionStationaryDeterministicSystem>(numParticles));
-    }
+  if (numParticles <= 0) {
+    emit log("# particles must be > 0", true);
+  }
+  else {
+    emit setSystem(std::make_shared<LeaderElectionStationaryDeterministicSystem>(numParticles));
+  }
+}
+
+LeaderElectionDeterministicAlg::LeaderElectionDeterministicAlg() :
+  Algorithm("Deterministic Leader Election", "leaderelection_deterministic") {
+  addParameter("# Particles", "100");
+}
+
+void LeaderElectionDeterministicAlg::instantiate(const int numParticles) {
+  if (numParticles <= 0) {
+    emit log("# particles must be > 0", true);
+  }
+  else {
+    emit setSystem(std::make_shared<LeaderElectionDeterministicSystem>(numParticles));
+  }
 }
 
 ShapeFormationAlg::ShapeFormationAlg() :
@@ -227,6 +242,7 @@ AlgorithmList::AlgorithmList() {
   _algorithms.push_back(new LeaderElectionAlg());
   _algorithms.push_back(new LeaderElectionErosionAlg());
   _algorithms.push_back(new LeaderElectionStationaryDeterministicAlg());
+  _algorithms.push_back(new LeaderElectionDeterministicAlg());
   _algorithms.push_back(new ShapeFormationAlg());
 }
 

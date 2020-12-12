@@ -48,6 +48,9 @@ class AmoebotSystem : public System, public RandomNumberGenerator {
   bool randomPermutationScheduler = false;
   int permutationIndex = 0;
   std::default_random_engine rng;
+  // decimal number between 0 and 1. Change this value to make the permutation
+  // scheduler re-shuffle the permutation with this probability. 
+  double randomReshuffleProb = 0.0;
 
   // Returns the number of particles in the system.
   unsigned int size() const final;

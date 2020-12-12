@@ -104,6 +104,9 @@ void ParameterListModel::createSystem(QString algName) {
   } else if (signature == "leaderelection_stationary_deterministic") {
       dynamic_cast<LeaderElectionStationaryDeterministicAlg*>(alg)->
           instantiate(params[0].toInt());
+  } else if (signature == "leaderelection_deterministic") {
+      dynamic_cast<LeaderElectionDeterministicAlg*>(alg)->
+          instantiate(params[0].toInt());
   } else {
     // An unrecognized signature has been entered.
     Q_ASSERT(false);
