@@ -25,8 +25,10 @@ public:
   enum class State {
     None,
     Initlialization,
-    Candidate,
     ForestFormation,
+    ForestFormationCandidate,
+    Convexification,
+    Candidate,
     Leader
   };
 
@@ -84,6 +86,23 @@ public:
   std::vector<int> firstLargerLabels = {};
 
   std::vector<bool> terminationDetections = {};
+
+  // Forest formation variables
+  int numCandidates = 1;
+
+  bool inTree = false;
+
+  set<int> requestedTreeJoin = {};
+
+  bool treeDone = false;
+
+  set<int> children = {};
+
+  set<int> nackReceived = {};
+
+  int parent = -1;
+
+  int candidateTreesDone = 0;
 
   // Constructs a new particle with a node position for its head, a global
   // compass direction from its head to its tail (-1 if contracted), an offset
@@ -319,6 +338,45 @@ protected:
       this->origin = origin;
       this->ttl = ttl;
       this->traversed = traversed;
+    }
+  };
+
+  /*
+   * Forest formation tokens
+   * 
+   * TreeJoinRequestToken : request a neighbour to join this particle's tree
+   * JoinTreeAckToken : acknowledge a join request
+   * JoinTreeNackToken : decline a join request
+   * CandidateTreeDoneToken : signal to other candidates that this candidate's tree is done
+   * ForestDoneToken : signal to subtree to change to next phase
+   */
+  struct TreeJoinRequestToken : public LeaderElectionToken {
+    TreeJoinRequestToken(int origin = -1) {
+      this->origin = origin;
+    }
+  };
+  struct JoinTreeAckToken : public LeaderElectionToken {
+    JoinTreeAckToken(int origin = -1) {
+      this->origin = origin;
+    }
+  };
+  struct JoinTreeNackToken : public LeaderElectionToken {
+    JoinTreeNackToken(int origin = -1) {
+      this->origin = origin;
+    }
+  };
+  struct CandidateTreeDoneToken : public LeaderElectionToken {
+    int ttl;
+    int traversed;
+    CandidateTreeDoneToken(int origin = -1, int ttl = 0, int traversed = 0) {
+      this->origin = origin;
+      this->ttl = ttl;
+      this->traversed = traversed;
+    }
+  };
+  struct ForestDoneToken : public LeaderElectionToken {
+    ForestDoneToken(int origin = -1) {
+      this->origin = origin;
     }
   };
 };

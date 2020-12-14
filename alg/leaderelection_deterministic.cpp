@@ -98,7 +98,8 @@ void LeaderElectionDeterministicParticle::activate() {
                 LeaderElectionDeterministicParticle &nbr = nbrAtLabel(prevNbr);
                 nbr.putToken(std::make_shared<TerminationToken>(localToGlobalDir((prevNbr+3)%6), token->ttl, token->traversed+1));
               }
-              state = State::Candidate;
+              numCandidates = token->ttl;
+              state = State::ForestFormationCandidate;
               return;
             }
           }
@@ -144,7 +145,8 @@ void LeaderElectionDeterministicParticle::activate() {
                 if (token->termination) {
                   LeaderElectionDeterministicParticle &nbr = nbrAtLabel(prevNbr);
                   nbr.putToken(std::make_shared<TerminationToken>(localToGlobalDir((prevNbr+3)%6), 6/count, 1));
-                  state = State::Candidate;
+                  numCandidates = 6/count;
+                  state = State::ForestFormationCandidate;
                   return;
                 }
               }
@@ -793,16 +795,223 @@ void LeaderElectionDeterministicParticle::activate() {
       }
     }
   }
-  else if (state == State::Candidate) {
-    // TODO
+  else if (state == State::ForestFormationCandidate) {
+    if (!inTree) {
+      while (hasToken<TreeJoinRequestToken>()) {
+        std::shared_ptr<TreeJoinRequestToken> token = takeToken<TreeJoinRequestToken>();
+        int reqDir = globalToLocalDir(token->origin);
+        LeaderElectionDeterministicParticle &nbr = nbrAtLabel(reqDir);
+        nbr.putToken(std::make_shared<JoinTreeNackToken>(localToGlobalDir((reqDir+3)%6)));
+        requestedTreeJoin.insert(reqDir);
+      }
+      inTree = true;
+      for (int dir = 0; dir < 6; dir++) {
+        if (hasNbrAtLabel(dir)) {
+          if (requestedTreeJoin.find(dir) == requestedTreeJoin.end()) {
+            LeaderElectionDeterministicParticle &nbr = nbrAtLabel(dir);
+            nbr.putToken(std::make_shared<TreeJoinRequestToken>(localToGlobalDir((dir+3)%6)));
+          }
+        }
+      }
+    }
+    else if (!treeDone) {
+      while (hasToken<JoinTreeAckToken>()) {
+        std::shared_ptr<JoinTreeAckToken> token = takeToken<JoinTreeAckToken>();
+        int childDir = globalToLocalDir(token->origin);
+        children.insert(childDir);
+      }
+      while (hasToken<JoinTreeNackToken>()) {
+        std::shared_ptr<JoinTreeNackToken> token = takeToken<JoinTreeNackToken>();
+        int nackDir = globalToLocalDir(token->origin);
+        nackReceived.insert(nackDir);
+      }
+      bool done = true;
+      for (int dir = 0; dir < 6; dir++) {
+        if (hasNbrAtLabel(dir)) {
+          if (requestedTreeJoin.find(dir) == requestedTreeJoin.end()) {
+            if (children.find(dir) == children.end() && nackReceived.find(dir) == nackReceived.end()) {
+              done = false;
+              break;
+            }
+          }
+        }
+      }
+      if (done) {
+        int dir = nextDir(0);
+        LeaderElectionDeterministicParticle &nbr = nbrAtLabel(dir);
+        nbr.putToken(std::make_shared<CandidateTreeDoneToken>(localToGlobalDir((dir+3)%6), numCandidates+1, 1));
+        treeDone = true;
+      }
+    }
+    else if (candidateTreesDone < numCandidates) {
+      while (hasToken<CandidateTreeDoneToken>()) {
+        std::shared_ptr<CandidateTreeDoneToken> token = takeToken<CandidateTreeDoneToken>();
+        candidateTreesDone += 1;
+        if (token->traversed + 1 < token->ttl) {
+          int dir = nextDir(0);
+          LeaderElectionDeterministicParticle &nbr = nbrAtLabel(dir);
+          nbr.putToken(std::make_shared<CandidateTreeDoneToken>(localToGlobalDir((dir+3)%6), token->ttl, token->traversed+1));
+        }
+      }
+    }
+    else {
+      for (int dir : children) {
+        LeaderElectionDeterministicParticle &nbr = nbrAtLabel(dir);
+        nbr.putToken(std::make_shared<ForestDoneToken>(localToGlobalDir((dir+3)%6)));
+      }
+      state = State::Candidate;
+    }
   }
   else if (state == State::ForestFormation) {
+    if (numBoundaries() == 0) {
+      if (!inTree) {
+        while (hasToken<TreeJoinRequestToken>()) {
+          std::shared_ptr<TreeJoinRequestToken> token = takeToken<TreeJoinRequestToken>();
+          int reqDir = globalToLocalDir(token->origin);
+          requestedTreeJoin.insert(reqDir);
+        }
+        if (requestedTreeJoin.size() > 0) {
+          for (int dir = 0; dir < 6; dir++) {
+            if (hasNbrAtLabel(dir)) {
+              if (requestedTreeJoin.find(dir) == requestedTreeJoin.end()) {
+                LeaderElectionDeterministicParticle &nbr = nbrAtLabel(dir);
+                nbr.putToken(std::make_shared<TreeJoinRequestToken>(localToGlobalDir((dir+3)%6)));
+              }
+            }
+          }
+          inTree = true;
+        }
+      }
+      else if (!treeDone) {
+        while (hasToken<JoinTreeAckToken>()) {
+          std::shared_ptr<JoinTreeAckToken> token = takeToken<JoinTreeAckToken>();
+          int childDir = globalToLocalDir(token->origin);
+          children.insert(childDir);
+        }
+        while (hasToken<JoinTreeNackToken>()) {
+          std::shared_ptr<JoinTreeNackToken> token = takeToken<JoinTreeNackToken>();
+          int nackDir = globalToLocalDir(token->origin);
+          nackReceived.insert(nackDir);
+        }
+        bool done = true;
+        for (int dir = 0; dir < 6; dir++) {
+          if (hasNbrAtLabel(dir)) {
+            if (requestedTreeJoin.find(dir) == requestedTreeJoin.end()) {
+              if (children.find(dir) == children.end() && nackReceived.find(dir) == nackReceived.end()) {
+                done = false;
+                break;
+              }
+            }
+          }
+        }
+        if (done) {
+          for (int dir = 0; dir < 6; dir++) {
+            if (requestedTreeJoin.find(dir) != requestedTreeJoin.end()) {
+              LeaderElectionDeterministicParticle &nbr = nbrAtLabel(dir);
+              if (parent == -1) {
+                parent = dir;
+                nbr.putToken(std::make_shared<JoinTreeAckToken>(localToGlobalDir((dir+3)%6)));
+              }
+              else {
+                nbr.putToken(std::make_shared<JoinTreeNackToken>(localToGlobalDir((dir+3)%6)));
+              }
+            }
+          }
+          treeDone = true;
+        }
+      }
+      else if (hasToken<ForestDoneToken>()) {
+        takeToken<ForestDoneToken>();
+        for (int dir : children) {
+          LeaderElectionDeterministicParticle &nbr = nbrAtLabel(dir);
+          nbr.putToken(std::make_shared<ForestDoneToken>(localToGlobalDir((dir+3)%6)));
+        }
+        state = State::Convexification;
+      }
+    }
+    else {
+      if (!inTree) {
+        while (hasToken<TreeJoinRequestToken>()) {
+          std::shared_ptr<TreeJoinRequestToken> token = takeToken<TreeJoinRequestToken>();
+          int reqDir = globalToLocalDir(token->origin);
+          LeaderElectionDeterministicParticle &nbr = nbrAtLabel(reqDir);
+          if (reqDir != prevDir(0)) {
+            nbr.putToken(std::make_shared<JoinTreeNackToken>(localToGlobalDir((reqDir+3)%6)));
+          }
+          requestedTreeJoin.insert(reqDir);
+        }
+        inTree = true;
+        for (int dir = 0; dir < 6; dir++) {
+          if (hasNbrAtLabel(dir)) {
+            if (requestedTreeJoin.find(dir) == requestedTreeJoin.end()) {
+              if (dir != prevDir(0)) {
+                LeaderElectionDeterministicParticle &nbr = nbrAtLabel(dir);
+                nbr.putToken(std::make_shared<TreeJoinRequestToken>(localToGlobalDir((dir+3)%6)));
+              }
+            }
+          }
+        }
+      }
+      else if (!treeDone) {
+        while (hasToken<TreeJoinRequestToken>()) {
+          takeToken<TreeJoinRequestToken>();
+        }
+        while (hasToken<JoinTreeAckToken>()) {
+          std::shared_ptr<JoinTreeAckToken> token = takeToken<JoinTreeAckToken>();
+          int childDir = globalToLocalDir(token->origin);
+          children.insert(childDir);
+        }
+        while (hasToken<JoinTreeNackToken>()) {
+          std::shared_ptr<JoinTreeNackToken> token = takeToken<JoinTreeNackToken>();
+          int nackDir = globalToLocalDir(token->origin);
+          nackReceived.insert(nackDir);
+        }
+        bool done = true;
+        for (int dir = 0; dir < 6; dir++) {
+          if (hasNbrAtLabel(dir)) {
+            if (requestedTreeJoin.find(dir) == requestedTreeJoin.end()) {
+              if (children.find(dir) == children.end() && nackReceived.find(dir) == nackReceived.end() && dir != prevDir(0)) {
+                done = false;
+                break;
+              }
+            }
+          }
+        }
+        if (done) {
+          treeDone = true;
+          parent = prevDir(0);
+          LeaderElectionDeterministicParticle &nbr = nbrAtLabel(parent);
+          nbr.putToken(std::make_shared<JoinTreeAckToken>(localToGlobalDir((parent+3)%6)));
+        }
+      }
+      else {
+        while (hasToken<TreeJoinRequestToken>()) {
+          takeToken<TreeJoinRequestToken>();
+        }
+        while (hasToken<CandidateTreeDoneToken>()) {
+          std::shared_ptr<CandidateTreeDoneToken> token = takeToken<CandidateTreeDoneToken>();
+          int dir = nextDir(0);
+          LeaderElectionDeterministicParticle &nbr = nbrAtLabel(dir);
+          nbr.putToken(std::make_shared<CandidateTreeDoneToken>(localToGlobalDir((dir+3)%6), token->ttl, token->traversed));
+        }
+        if (hasToken<ForestDoneToken>()) {
+          takeToken<ForestDoneToken>();
+          for (int dir : children) {
+            LeaderElectionDeterministicParticle &nbr = nbrAtLabel(dir);
+            nbr.putToken(std::make_shared<ForestDoneToken>(localToGlobalDir((dir+3)%6)));
+          }
+          state = State::Convexification;
+        }
+      }
+    }
+  }
+  else if (state == State::Convexification) {
     // TODO
   }
 }
 
 int LeaderElectionDeterministicParticle::headMarkDir() const {
-  return -1;
+  return parent;
 }
 
 int LeaderElectionDeterministicParticle::headMarkColor() const {
@@ -822,8 +1031,14 @@ int LeaderElectionDeterministicParticle::headMarkColor() const {
   else if (state == State::ForestFormation) {
     return 0x008800; // dark green
   }
-  else if (state == State::Candidate) {
+  else if (state == State::ForestFormationCandidate) {
      return 0x5a2d00; // brown
+  }
+  else if (state == State::Convexification) {
+    return 0x0000ff; // blue
+  }
+  else if (state == State::Candidate) {
+    return 0xff9b00; // gold
   }
   else if (state == State::Leader) {
     return 0x00ff00; // green
