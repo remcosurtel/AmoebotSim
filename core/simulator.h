@@ -21,6 +21,7 @@ class Simulator : public QObject {
   virtual ~Simulator();
 
   void setSystem(std::shared_ptr<System> _system);
+  void saveSystem();
   std::shared_ptr<System> getSystem() const;
 
  signals:

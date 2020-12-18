@@ -14,6 +14,7 @@
 #include <QStringList>
 
 #include "core/system.h"
+#include "core/simulator.h"
 
 class Algorithm : public QObject {
   Q_OBJECT
@@ -39,6 +40,7 @@ class Algorithm : public QObject {
  signals:
   void log(const QString msg, bool error = false);
   void setSystem(std::shared_ptr<System> system);
+  void saveSystem();
 
  private:
   QString _name;
@@ -122,40 +124,44 @@ class LeaderElectionAlg : public Algorithm {
   LeaderElectionAlg();
 
  public slots:
-  void instantiate(const int numParticles = 100, const double holeProb = 0.2);
+  void instantiate(const int numParticles = 100, const double holeProb = 0.2, const QString fileName = "");
+  void save();
 };
 
 // Leader Election by Erosion.
 class LeaderElectionErosionAlg : public Algorithm {
-    Q_OBJECT
+  Q_OBJECT
 
 public:
-    LeaderElectionErosionAlg();
+  LeaderElectionErosionAlg();
 
 public slots:
-    void instantiate(const int numParticles = 100);
+  void instantiate(const int numParticles = 100, const QString fileName = "");
+  void save();
 };
 
 // Stationary Deterministic Leader Election.
 class LeaderElectionStationaryDeterministicAlg : public Algorithm {
-    Q_OBJECT
+  Q_OBJECT
 
 public:
-    LeaderElectionStationaryDeterministicAlg();
+  LeaderElectionStationaryDeterministicAlg();
 
 public slots:
-    void instantiate(const int numParticles = 100);
+  void instantiate(const int numParticles = 100, const QString fileName = "");
+  void save();
 };
 
 // Deterministic Leader Election.
 class LeaderElectionDeterministicAlg : public Algorithm {
-    Q_OBJECT
+  Q_OBJECT
 
 public:
-    LeaderElectionDeterministicAlg();
+  LeaderElectionDeterministicAlg();
 
 public slots:
-    void instantiate(const int numParticles = 100);
+  void instantiate(const int numParticles = 100, const QString fileName = "");
+  void save();
 };
 
 // Basic Shape Formation.

@@ -27,6 +27,7 @@ ApplicationWindow {
 
   signal algSelected(string algName)
   signal instantiate(string algName)
+  signal save(string algName)
 
   signal start()
   signal stop()
@@ -227,6 +228,17 @@ ApplicationWindow {
       onClicked: {
         vis.forceActiveFocus()
         instantiate(algorithmSelectBox.currentText)
+      }
+    }
+
+    A_Button {
+      id: saveButton
+      text: "Save"
+      Layout.preferredWidth: parent.width
+
+      onClicked: {
+        vis.forceActiveFocus()
+        save(algorithmSelectBox.currentText)
       }
     }
 

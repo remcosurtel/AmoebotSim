@@ -385,7 +385,9 @@ class LeaderElectionDeterministicSystem : public AmoebotSystem {
 public:
   // Constructs a system of LeaderElectionDeterministicParticles with an optionally
   // specified size (#particles).
-  LeaderElectionDeterministicSystem(int numParticles = 100);
+  LeaderElectionDeterministicSystem(int numParticles = 100, QString fileName = "");
+
+  string outputPath = "";
 
   // Checks whether or not the system's run of the Leader Election algorithm has
   // terminated (all particles in state Finished or Leader).

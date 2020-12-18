@@ -12,6 +12,11 @@
 #include <QTextStream>
 #include <QtGlobal>
 
+#include <string>
+#include <fstream>
+#include "core/particle.h"
+#include <QTextStream>
+
 #include "core/metric.h"
 
 Simulator::Simulator() {
@@ -29,6 +34,26 @@ void Simulator::setSystem(std::shared_ptr<System> _system) {
 
   system = _system;
   emit systemChanged(system);
+}
+
+void Simulator::saveSystem() {
+  QTextStream out(stdout);
+  out << "Saving system..." << endl;
+
+  std::string path = "../AmoebotSim/data/input/save.txt";
+  std::ofstream file;
+  file.open(path);
+
+  int index = 0;
+  while (index < system->size()) {
+    const Particle& p = system->at(index);
+    file << std::to_string(p.head.x) << "," << std::to_string(p.head.y) << "\n";
+    index += 1;
+  }
+
+  file.close();
+  
+  out << "System saved to: " << QString::fromStdString(path) << endl;
 }
 
 std::shared_ptr<System> Simulator::getSystem() const {

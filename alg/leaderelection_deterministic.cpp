@@ -1281,10 +1281,54 @@ void LeaderElectionDeterministicParticle::cleanupForNbr(int boundary) {
 
 //----------------------------BEGIN SYSTEM CODE----------------------------
 
-LeaderElectionDeterministicSystem::LeaderElectionDeterministicSystem(int numParticles) {
-  Q_ASSERT(numParticles > 0);
+#include <string>
+#include <fstream>
+#include <sstream>
+#include <QTextStream>
 
-  double holeProb = 0.0;
+using namespace std;
+
+LeaderElectionDeterministicSystem::LeaderElectionDeterministicSystem(int numParticles, QString fileName) {
+  Q_ASSERT(numParticles > 0 || fileName.size() > 0);
+
+  string filePath = "../AmoebotSim/data/input/" + fileName.toStdString() + ".txt";
+  if (fileName != "") {
+    QTextStream out(stdout);
+    out << "File name: " << fileName << endl;
+    ifstream file(filePath);
+    if (!file) {
+      out << "Cannot open file." << endl;
+      return;
+    }
+    out << "File opened." << endl;
+    
+    string str;
+    while (getline(file, str)) {
+      std::vector<int> vect;
+      std::stringstream ss(str);
+
+      while (ss.good()) {
+        string substr;
+        getline(ss, substr, ',');
+        vect.push_back(std::stoi(substr));
+      }
+
+      int x = vect[0];
+      int y = vect[1];
+
+      insert(new LeaderElectionDeterministicParticle(
+      Node(x, y), -1, randDir(), *this,
+      LeaderElectionDeterministicParticle::State::Initlialization));
+    }
+
+    file.close();
+
+    outputPath = "../AmoebotSim/data/output/" + fileName.toStdString() + ".txt";
+
+    out << "Particle system initialized from file." << endl;
+    
+    return;
+  }
 
   randomPermutationScheduler = true;
   randomReshuffleProb = 0.1;
@@ -1345,6 +1389,20 @@ bool LeaderElectionDeterministicSystem::hasTerminated() const {
   for (auto p : particles) {
     auto hp = dynamic_cast<LeaderElectionDeterministicParticle *>(p);
     if (hp->state == LeaderElectionDeterministicParticle::State::Leader) {
+      if (outputPath != "") {
+        ofstream file;
+        file.open(outputPath);
+        file << std::to_string(hp->head.x) << "," << std::to_string(hp->head.y);
+
+        file << "\n" << std::to_string(getCount("# Rounds")._value);
+        file << "\n" << std::to_string(getCount("# Activations")._value);
+        file << "\n" << std::to_string(getCount("# Moves")._value);
+
+        file.close();
+
+        QTextStream out(stdout);
+        out << "Output written to: " << QString::fromStdString(outputPath) << endl;
+      }
       return true;
     }
   }

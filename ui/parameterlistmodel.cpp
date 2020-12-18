@@ -97,16 +97,45 @@ void ParameterListModel::createSystem(QString algName) {
         instantiate(params[0].toInt(), params[1].toDouble(), params[2]);
   } else if (signature == "leaderelection") {
     dynamic_cast<LeaderElectionAlg*>(alg)->
-        instantiate(params[0].toInt(), params[1].toDouble());
+        instantiate(params[0].toInt(), params[1].toDouble(), params[2]);
   } else if (signature == "leaderelection_erosion") {
       dynamic_cast<LeaderElectionErosionAlg*>(alg)->
-          instantiate(params[0].toInt());
+          instantiate(params[0].toInt(), params[1]);
   } else if (signature == "leaderelection_stationary_deterministic") {
       dynamic_cast<LeaderElectionStationaryDeterministicAlg*>(alg)->
-          instantiate(params[0].toInt());
+          instantiate(params[0].toInt(), params[1]);
   } else if (signature == "leaderelection_deterministic") {
       dynamic_cast<LeaderElectionDeterministicAlg*>(alg)->
-          instantiate(params[0].toInt());
+          instantiate(params[0].toInt(), params[1]);
+  } else {
+    // An unrecognized signature has been entered.
+    Q_ASSERT(false);
+  }
+}
+
+#include <QTextStream>
+
+void ParameterListModel::saveSystem(QString algName) {
+  QTextStream out(stdout);
+  out << "Received signal to save system..." << endl;
+
+  QString signature;
+  std::vector<QString> params;
+  Algorithm* alg = _algs->getAlg(algName);
+  signature = _algs->getAlgSignature(algName);
+
+  if (signature == "leaderelection") {
+    dynamic_cast<LeaderElectionAlg*>(alg)->
+        save();
+  } else if (signature == "leaderelection_erosion") {
+      dynamic_cast<LeaderElectionErosionAlg*>(alg)->
+          save();
+  } else if (signature == "leaderelection_stationary_deterministic") {
+      dynamic_cast<LeaderElectionStationaryDeterministicAlg*>(alg)->
+          save();
+  } else if (signature == "leaderelection_deterministic") {
+      dynamic_cast<LeaderElectionDeterministicAlg*>(alg)->
+          save();
   } else {
     // An unrecognized signature has been entered.
     Q_ASSERT(false);

@@ -146,60 +146,82 @@ LeaderElectionAlg::LeaderElectionAlg() :
   Algorithm("Leader Election", "leaderelection") {
   addParameter("# Particles", "100");
   addParameter("Hole Prob.", "0.2");
+  addParameter("File name", "");
 }
 
 void LeaderElectionAlg::instantiate(const int numParticles,
-                                    const double holeProb) {
-  if (numParticles <= 0) {
-    emit log("# particles must be > 0", true);
+                                    const double holeProb, 
+                                    const QString fileName) {
+  if (numParticles <= 0 && fileName.size() == 0) {
+    emit log("# particles must be > 0 or file name must be given", true);
   } else if (holeProb < 0 || holeProb > 1) {
     emit log("holeProb in [0,1] required", true);
   } else {
     emit setSystem(std::make_shared<LeaderElectionSystem>(numParticles,
-                                                          holeProb));
+                                                          holeProb, 
+                                                          fileName));
   }
+}
+
+void LeaderElectionAlg::save() {
+  emit saveSystem();
 }
 
 LeaderElectionErosionAlg::LeaderElectionErosionAlg() :
   Algorithm("Leader Election by Erosion", "leaderelection_erosion") {
   addParameter("# Particles", "100");
+  addParameter("File name", "");
 }
 
-void LeaderElectionErosionAlg::instantiate(const int numParticles) {
-  if (numParticles <= 0) {
-    emit log("# particles must be > 0", true);
+void LeaderElectionErosionAlg::instantiate(const int numParticles, const QString fileName) {
+  if (numParticles <= 0 && fileName.size() == 0) {
+    emit log("# particles must be > 0 or file name must be given", true);
   }
   else {
-    emit setSystem(std::make_shared<LeaderElectionErosionSystem>(numParticles));
+    emit setSystem(std::make_shared<LeaderElectionErosionSystem>(numParticles, fileName));
   }
+}
+
+void LeaderElectionErosionAlg::save() {
+  emit saveSystem();
 }
 
 LeaderElectionStationaryDeterministicAlg::LeaderElectionStationaryDeterministicAlg() :
   Algorithm("Stationary Deterministic Leader Election", "leaderelection_stationary_deterministic") {
   addParameter("# Particles", "100");
+  addParameter("File name", "");
 }
 
-void LeaderElectionStationaryDeterministicAlg::instantiate(const int numParticles) {
-  if (numParticles <= 0) {
-    emit log("# particles must be > 0", true);
+void LeaderElectionStationaryDeterministicAlg::instantiate(const int numParticles, const QString fileName) {
+  if (numParticles <= 0 && fileName.size() == 0) {
+    emit log("# particles must be > 0 or file name must be given", true);
   }
   else {
-    emit setSystem(std::make_shared<LeaderElectionStationaryDeterministicSystem>(numParticles));
+    emit setSystem(std::make_shared<LeaderElectionStationaryDeterministicSystem>(numParticles, fileName));
   }
+}
+
+void LeaderElectionStationaryDeterministicAlg::save() {
+  emit saveSystem();
 }
 
 LeaderElectionDeterministicAlg::LeaderElectionDeterministicAlg() :
   Algorithm("Deterministic Leader Election", "leaderelection_deterministic") {
   addParameter("# Particles", "100");
+  addParameter("File name", "");
 }
 
-void LeaderElectionDeterministicAlg::instantiate(const int numParticles) {
-  if (numParticles <= 0) {
-    emit log("# particles must be > 0", true);
+void LeaderElectionDeterministicAlg::instantiate(const int numParticles, const QString fileName) {
+  if (numParticles <= 0 && fileName.size() == 0) {
+    emit log("# particles must be > 0 or file name must be given", true);
   }
   else {
-    emit setSystem(std::make_shared<LeaderElectionDeterministicSystem>(numParticles));
+    emit setSystem(std::make_shared<LeaderElectionDeterministicSystem>(numParticles, fileName));
   }
+}
+
+void LeaderElectionDeterministicAlg::save() {
+  emit saveSystem();
 }
 
 ShapeFormationAlg::ShapeFormationAlg() :

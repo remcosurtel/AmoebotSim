@@ -2519,10 +2519,54 @@ LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::prevNode(bool
 
 //----------------------------BEGIN SYSTEM CODE----------------------------
 
-LeaderElectionStationaryDeterministicSystem::LeaderElectionStationaryDeterministicSystem(int numParticles) {
-  Q_ASSERT(numParticles > 0);
+#include <string>
+#include <fstream>
+#include <sstream>
+#include <QTextStream>
 
-  double holeProb = 0.0;
+using namespace std;
+
+LeaderElectionStationaryDeterministicSystem::LeaderElectionStationaryDeterministicSystem(int numParticles, QString fileName) {
+  Q_ASSERT(numParticles > 0 || fileName.size() > 0);
+
+  string filePath = "../AmoebotSim/data/input/" + fileName.toStdString() + ".txt";
+  if (fileName != "") {
+    QTextStream out(stdout);
+    out << "File name: " << fileName << endl;
+    ifstream file(filePath);
+    if (!file) {
+      out << "Cannot open file." << endl;
+      return;
+    }
+    out << "File opened." << endl;
+    
+    string str;
+    while (getline(file, str)) {
+      std::vector<int> vect;
+      std::stringstream ss(str);
+
+      while (ss.good()) {
+        string substr;
+        getline(ss, substr, ',');
+        vect.push_back(std::stoi(substr));
+      }
+
+      int x = vect[0];
+      int y = vect[1];
+
+      insert(new LeaderElectionStationaryDeterministicParticle(
+      Node(x, y), -1, randDir(), *this,
+      LeaderElectionStationaryDeterministicParticle::State::IdentificationLabeling));
+    }
+
+    file.close();
+
+    outputPath = "../AmoebotSim/data/output/" + fileName.toStdString() + ".txt";
+
+    out << "Particle system initialized from file." << endl;
+    
+    return;
+  }
 
   randomPermutationScheduler = true;
 
@@ -2582,6 +2626,25 @@ bool LeaderElectionStationaryDeterministicSystem::hasTerminated() const {
   for (auto p : particles) {
     auto hp = dynamic_cast<LeaderElectionStationaryDeterministicParticle *>(p);
     if (hp->state == LeaderElectionStationaryDeterministicParticle::State::Leader || hp->state == LeaderElectionStationaryDeterministicParticle::State::Finished) {
+      if (outputPath != "") {
+        ofstream file;
+        file.open(outputPath);
+        if (hp->state == LeaderElectionStationaryDeterministicParticle::State::Leader) {
+          file << std::to_string(hp->head.x) << "," << std::to_string(hp->head.y);
+        }
+        else {
+           file << "N/A";
+        }
+
+        file << "\n" << std::to_string(getCount("# Rounds")._value);
+        file << "\n" << std::to_string(getCount("# Activations")._value);
+        file << "\n" << std::to_string(getCount("# Moves")._value);
+
+        file.close();
+
+        QTextStream out(stdout);
+        out << "Output written to: " << QString::fromStdString(outputPath) << endl;
+      }
       return true;
     }
   }

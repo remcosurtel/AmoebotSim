@@ -35,6 +35,8 @@
 #include "core/amoebotparticle.h"
 #include "core/amoebotsystem.h"
 
+using namespace std;
+
 class LeaderElectionParticle : public AmoebotParticle {
  public:
   enum class State {
@@ -380,7 +382,9 @@ class LeaderElectionSystem : public AmoebotSystem {
   // size (#particles), and hole probability. holeProb in [0,1] controls how
   // "spread out" the system is; closer to 0 is more compressed, closer to 1 is
   // more expanded.
-  LeaderElectionSystem(int numParticles = 100, double holeProb = 0.2);
+  LeaderElectionSystem(int numParticles = 100, double holeProb = 0.2, QString fileName = "");
+
+  string outputPath = "";
 
   // Checks whether or not the system's run of the Leader Election algorithm has
   // terminated (all particles in state Finished or Leader).

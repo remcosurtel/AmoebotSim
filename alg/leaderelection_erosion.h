@@ -246,7 +246,9 @@ public:
   // specified size (#particles), and hole probability. holeProb in [0,1]
   // controls how "spread out" the system is; closer to 0 is more compressed,
   // closer to 1 is more expanded.
-  LeaderElectionErosionSystem(int numParticles = 100);
+  LeaderElectionErosionSystem(int numParticles = 100, QString fileName = "");
+
+  string outputPath = "";
 
   // Checks whether or not the system's run of the Leader Election algorithm has
   // terminated (all particles in state Finished or Leader).

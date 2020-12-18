@@ -2,6 +2,11 @@
  * The full GNU GPLv3 can be found in the LICENSE file, and the full copyright
  * notice can be found at the top of main/main.cpp. */
 
+#include <string>
+#include <fstream>
+#include "core/particle.h"
+#include <QTextStream>
+
 #include "core/system.h"
 
 SystemIterator::SystemIterator(const System* system, int pos)

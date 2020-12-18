@@ -43,6 +43,9 @@ class ParameterListModel : public QStringListModel {
   // algorithm (according to algName).
   void createSystem(QString algName);
 
+  // Saves the current particle system to a text file
+  void saveSystem(QString algName);
+
  private:
   AlgorithmList * _algs;
   QStringList _values;
