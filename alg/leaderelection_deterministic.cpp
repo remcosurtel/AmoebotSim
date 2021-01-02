@@ -28,6 +28,7 @@ void LeaderElectionDeterministicParticle::activate() {
   if (state == State::Initlialization) {
     if (!isBoundaryParticle()) {
       // Particles not on a boundary change to phase 2 and wait
+      onOuterBoundary = false;
       state = State::ForestFormation;
       return;
     }
@@ -144,9 +145,8 @@ void LeaderElectionDeterministicParticle::activate() {
                 terminationDetections[i] = false;
                 if (token->termination) {
                   LeaderElectionDeterministicParticle &nbr = nbrAtLabel(prevNbr);
-                  nbr.putToken(std::make_shared<TerminationToken>(localToGlobalDir((prevNbr+3)%6), 6/count, 1));
+                  nbr.putToken(std::make_shared<TerminationToken>(localToGlobalDir((prevNbr+3)%6), 6/count+1, 1));
                   numCandidates = 6/count;
-                  state = State::ForestFormationCandidate;
                   return;
                 }
               }
@@ -564,6 +564,8 @@ void LeaderElectionDeterministicParticle::activate() {
               takeToken<TerminationToken>();
               LeaderElectionDeterministicParticle &nbr = nbrAtLabel(prevNbr);
               nbr.putToken(std::make_shared<TerminationToken>(localToGlobalDir((prevNbr+3)%6), token->ttl, token->traversed));
+              state = State::ForestFormation;
+              return;
             }
           }
 
@@ -859,10 +861,19 @@ void LeaderElectionDeterministicParticle::activate() {
         LeaderElectionDeterministicParticle &nbr = nbrAtLabel(dir);
         nbr.putToken(std::make_shared<ForestDoneToken>(localToGlobalDir((dir+3)%6)));
       }
-      state = State::Candidate;
+      state = State::ConvexificationCandidate;
     }
   }
   else if (state == State::ForestFormation) {
+    if (hasToken<ConvexificationStartToken>() && !hasToken<CandidateTreeDoneToken>()) {
+      takeToken<ConvexificationStartToken>();
+      for (int childDir : children) {
+        LeaderElectionDeterministicParticle &child = nbrAtLabel(childDir);
+        child.putToken(std::make_shared<ConvexificationStartToken>(localToGlobalDir((childDir+3)%6)));
+      }
+      state = State::Convexification;
+      return;
+    }
     if (numBoundaries() == 0) {
       if (!inTree) {
         while (hasToken<TreeJoinRequestToken>()) {
@@ -926,7 +937,6 @@ void LeaderElectionDeterministicParticle::activate() {
           LeaderElectionDeterministicParticle &nbr = nbrAtLabel(dir);
           nbr.putToken(std::make_shared<ForestDoneToken>(localToGlobalDir((dir+3)%6)));
         }
-        state = State::Convexification;
       }
     }
     else {
@@ -990,7 +1000,13 @@ void LeaderElectionDeterministicParticle::activate() {
         }
         while (hasToken<CandidateTreeDoneToken>()) {
           std::shared_ptr<CandidateTreeDoneToken> token = takeToken<CandidateTreeDoneToken>();
-          int dir = nextDir(0);
+          int dir = (globalToLocalDir(token->origin) + 5) % 6;
+          while (hasNbrAtLabel(dir)) {
+            dir = (dir + 5) % 6;
+          }
+          while (!hasNbrAtLabel(dir)) {
+            dir = (dir + 5) % 6;
+          }
           LeaderElectionDeterministicParticle &nbr = nbrAtLabel(dir);
           nbr.putToken(std::make_shared<CandidateTreeDoneToken>(localToGlobalDir((dir+3)%6), token->ttl, token->traversed));
         }
@@ -1000,13 +1016,138 @@ void LeaderElectionDeterministicParticle::activate() {
             LeaderElectionDeterministicParticle &nbr = nbrAtLabel(dir);
             nbr.putToken(std::make_shared<ForestDoneToken>(localToGlobalDir((dir+3)%6)));
           }
-          state = State::Convexification;
         }
       }
     }
   }
-  else if (state == State::Convexification) {
-    // TODO
+  else if (state == State::Convexification || state == State::ConvexificationCandidate) {
+    if (state == State::ConvexificationCandidate && !convexificationStarted) {
+      for (int childDir : children) {
+        LeaderElectionDeterministicParticle &child = nbrAtLabel(childDir);
+        child.putToken(std::make_shared<ConvexificationStartToken>(localToGlobalDir((childDir+3)%6)));
+      }
+      convexificationStarted = true;
+    }
+    for (int dir = 0; dir < 6; dir++) {
+      if (hasNbrAtLabel(dir)) {
+        LeaderElectionDeterministicParticle &nbr = nbrAtLabel(dir);
+        if (nbr.state == State::ForestFormation || nbr.state == State::ForestFormationCandidate) {
+          return;
+        }
+      }
+    }
+
+    if (hasToken<ChildDirToken>()) {
+      std::shared_ptr<ChildDirToken> token = takeToken<ChildDirToken>();
+      children.insert(globalToLocalDir(token->origin));
+      for (int childDir : children) {
+        if (hasNbrAtLabel(childDir)) {
+          LeaderElectionDeterministicParticle &child = nbrAtLabel(childDir);
+          if (localToGlobalDir(child.parent) == (localToGlobalDir(childDir) + 3) % 6) {
+            continue;
+          }
+        }
+        children.erase(childDir);
+      }
+    }
+
+    // TODO: acknowledgement messages
+    if (isContracted()) {
+      if (hasToken<ParentDirToken>()) {
+        std::shared_ptr<ParentDirToken> token = takeToken<ParentDirToken>();
+        qDebug() << "Particle: " + QString::number(head.x) + ", " + QString::number(head.y);
+        qDebug() << "Received parent dir update: " + QString::number(parent) + " -> " + QString::number(globalToLocalDir(token->origin));
+        parent = globalToLocalDir(token->origin);
+      }
+      if (onOuterBoundary && isBoundaryParticle() && !isBridgeParticle() && !isSemiBridgeParticle()) {
+        if (isConcave()) {
+          int dir = concaveDir();
+          if (dir == (parent + 1) % 6) {
+            parent = (dir + 3 + 1) % 6;
+          }
+          else if (dir == (parent + 5) % 6) {
+            parent = (dir + 3 + 5) % 6;
+          }
+          else {
+            return;
+          }
+          expand(dir);
+        }
+      }
+    }
+    else {
+      int parentLabel = dirToHeadLabel(parent);
+      if (children.size() > 0) {
+        set<int> newChildren = {};
+        set<int> oldChildren = {};
+        for (int childDir : children) {
+          if (childDir == (tailDir() + 3 + 1) % 6) {
+            childDir = (tailDir() + 5) % 6;
+            newChildren.insert(childDir);
+          }
+          else if (childDir == (tailDir() + 3 + 5) % 6) {
+            childDir = (tailDir() + 1) % 6;
+            newChildren.insert(childDir);
+          }
+          else {
+            oldChildren.insert(childDir);
+          }
+        }
+        for (int childDir : oldChildren) {
+          int childLabel = dirToTailLabel(childDir);
+          int dir = childDir;
+          oldChildren.erase(childDir);
+          newChildren.insert(tailDir());
+          set<int> oldChildrenGlobal = {};
+          for (int d : oldChildren) {
+            oldChildrenGlobal.insert(localToGlobalDir(d));
+          }
+          if (canPull(childLabel)) {
+            LeaderElectionDeterministicParticle &nbr = nbrAtLabel(parentLabel);
+            nbr.putToken(std::make_shared<ChildDirToken>(localToGlobalDir((parent+3)%6)));
+            LeaderElectionDeterministicParticle &child = nbrAtLabel(childLabel);
+            child.putToken(std::make_shared<ChildHandOffToken>(localToGlobalDir((dir+3)%6), oldChildrenGlobal, localToGlobalDir((tailDir() + 3) % 6)));
+            pull(childLabel);
+            for (int d : newChildren) {
+              if (d != tailDir()) {
+                LeaderElectionDeterministicParticle &child = nbrAtLabel(d);
+                child.putToken(std::make_shared<ParentDirToken>(localToGlobalDir((d+3)%6)));
+              }
+            }
+          }
+          else {
+            return;
+          }
+          break;
+        }
+        if (!isContracted()) {
+          LeaderElectionDeterministicParticle &nbr = nbrAtLabel(parentLabel);
+          nbr.putToken(std::make_shared<ChildDirToken>(localToGlobalDir((parent+3)%6)));
+          int tDir = tailDir();
+          contractTail();
+          for (int d : newChildren) {
+            if (d != tDir) {
+              LeaderElectionDeterministicParticle &child = nbrAtLabel(d);
+              child.putToken(std::make_shared<ParentDirToken>(localToGlobalDir((d+3)%6)));
+            }
+          }
+        }
+        children = newChildren;
+      }
+      else {
+        LeaderElectionDeterministicParticle &nbr = nbrAtLabel(parentLabel);
+        nbr.putToken(std::make_shared<ChildDirToken>(localToGlobalDir((parent+3)%6)));
+        contractTail();
+      }
+      if (hasToken<ChildHandOffToken>()) {
+        std::shared_ptr<ChildHandOffToken> token = takeToken<ChildHandOffToken>();
+        for (int childDir : token->childDirs) {
+          childDir = globalToLocalDir(childDir);
+          children.insert(childDir);
+        }
+        parent = globalToLocalDir(token->headDir);
+      }
+    }
   }
 }
 
@@ -1037,7 +1178,7 @@ int LeaderElectionDeterministicParticle::headMarkColor() const {
   else if (state == State::Convexification) {
     return 0x0000ff; // blue
   }
-  else if (state == State::Candidate) {
+  else if (state == State::ConvexificationCandidate) {
     return 0xff9b00; // gold
   }
   else if (state == State::Leader) {
@@ -1064,19 +1205,78 @@ QString LeaderElectionDeterministicParticle::inspectionText() const {
     switch (state) {
     case State::Leader:
       return "leader";
+    case State::Initlialization:
+      return "initialization";
+    case State::ForestFormation:
+      return "forest formation";
+    case State::ForestFormationCandidate:
+      return "forest formation candidate";
+    case State::Convexification:
+      return "convexification";
+    case State::ConvexificationCandidate:
+      return "convexification candidate";
     default:
       return "no state";
     }
   }();
   text += "\n";
+  text += "parent: " + QString::number(parent) + "\n";
+  text += "children: ";
+  for (int child : children) {
+    if (!text.endsWith(": ")) {
+      text += ", ";
+    }
+    text += QString::number(child);
+  }
+  text += "\n";
   text += "has leader election tokens: " +
           QString::number(countTokens<LeaderElectionToken>()) + "\n";
-  text += "\n";
+  text += "bridge: ";
+  if (isBridgeParticle()) {
+    text += "true\n";
+  }
+  else {
+    text += "false\n";
+  }
+  text += "semi bridge: ";
+  if (isSemiBridgeParticle()) {
+    text += "true\n";
+  }
+  else {
+    text += "false\n";
+  }
+  text += "boundary: ";
+  if (isBoundaryParticle()) {
+    text += "true, ";
+  }
+  else {
+    text += "false, ";
+  }
+  if (onOuterBoundary) {
+    text += "true\n";
+  }
+  else {
+    text += "false\n";
+  }
+  text += "concave: ";
+  if (isConcave()) {
+    text += "true\n";
+  }
+  else {
+    text += "false\n";
+  }
+  text += "candidate tree done token: ";
+  if (hasToken<CandidateTreeDoneToken>()) {
+    text += "true\n";
+  }
+  else {
+    text += "false\n";
+  }
 
   return text;
 }
 
-bool LeaderElectionDeterministicParticle::isBoundaryParticle() {
+bool LeaderElectionDeterministicParticle::isBoundaryParticle() const {
   for (int dir = 0; dir < 6; dir++) {
     if (!hasNbrAtLabel(dir)) {
       return true;
@@ -1085,7 +1285,7 @@ bool LeaderElectionDeterministicParticle::isBoundaryParticle() {
   return false;
 }
 
-int LeaderElectionDeterministicParticle::numBoundaries() {
+int LeaderElectionDeterministicParticle::numBoundaries() const {
   int num = 0;
   for (int dir = 0; dir < 6; dir++) {
     int prevDir = (dir + 5) % 6;
@@ -1094,6 +1294,63 @@ int LeaderElectionDeterministicParticle::numBoundaries() {
     }
   }
   return num;
+}
+
+int LeaderElectionDeterministicParticle::numNbrs() const {
+  int num = 0;
+  for (int dir = 0; dir < 6; dir++) {
+    if (hasNbrAtLabel(dir)) {
+      num += 1;
+    }
+  }
+  return num;
+}
+
+bool LeaderElectionDeterministicParticle::isBridgeParticle() const {
+  int b = numBoundaries();
+  if (1 <= b <= 3) {
+    if (b == numNbrs()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool LeaderElectionDeterministicParticle::isSemiBridgeParticle() const {
+  if (numBoundaries() == 2) {
+    if (3 <= numNbrs() <= 4) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool LeaderElectionDeterministicParticle::isConcave() const {
+  for (int dir = 0; dir < 6; dir++) {
+    int prevDir = (dir + 5) % 6;
+    if (hasNbrAtLabel(prevDir) && !hasNbrAtLabel(dir)) {
+      int nextDir = dir;
+      int unoccupied = 0;
+      while (!hasNbrAtLabel(nextDir)) {
+        unoccupied += 1;
+        nextDir = (nextDir + 1) % 6;
+      }
+      if (unoccupied < 2) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+int LeaderElectionDeterministicParticle::concaveDir() const {
+  for (int dir = 0; dir < 6; dir++) {
+    int prevDir = (dir + 5) % 6;
+    if (hasNbrAtLabel(prevDir) && !hasNbrAtLabel(dir)) {
+      return dir;
+    }
+  }
+  Q_ASSERT(false);
 }
 
 void LeaderElectionDeterministicParticle::setLabels() {

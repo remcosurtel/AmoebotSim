@@ -28,7 +28,7 @@ public:
     ForestFormation,
     ForestFormationCandidate,
     Convexification,
-    Candidate,
+    ConvexificationCandidate,
     Leader
   };
 
@@ -104,6 +104,10 @@ public:
 
   int candidateTreesDone = 0;
 
+  bool onOuterBoundary = true;
+
+  bool convexificationStarted = false;
+
   // Constructs a new particle with a node position for its head, a global
   // compass direction from its head to its tail (-1 if contracted), an offset
   // for its local compass, and a system which it belongs to.
@@ -137,10 +141,26 @@ public:
 
   // Returns true iff the calling particle lies on the outer boundary
   // of the particle system
-  bool isBoundaryParticle();
+  bool isBoundaryParticle() const;
 
   // Returns the number of boundaries on which the calling particle lies
-  int numBoundaries();
+  int numBoundaries() const;
+
+  // Returns the number of occupied adjacent nodes
+  int numNbrs() const;
+
+  // Returns whether this is a bridge or semi-bridge particle, respectively.
+  // Bridge: particle on 1 <= i <= 3 boundaries, each of which is the outer boundary
+  //         and having i occupied adjacent nodes
+  // Semi: particle on 2 outer boundaries, and having 3 or 4 occupied adjacent nodes.
+  bool isBridgeParticle() const;
+  bool isSemiBridgeParticle() const;
+
+  // Returns iff this particle is concave w.r.t. the boundary on which it lies.
+  // Note that this function is only intended for particles on a single (outer) boundary.
+  bool isConcave() const;
+  // Returns the angle bisector of the particle w.r.t. the outer boundary.
+  int concaveDir() const;
 
   // Initialize the vector of labels with the appropriate label for each boundary.
   // -1 for bend left
@@ -377,6 +397,41 @@ protected:
   struct ForestDoneToken : public LeaderElectionToken {
     ForestDoneToken(int origin = -1) {
       this->origin = origin;
+    }
+  };
+
+  /*
+   * Convexification tokens
+   * 
+   * ConvexificationStartToken : signals to advance to convexification phase
+   * ParentDirToken : notify children of a change in location of their parent
+   * ChildDirToken : notify parent of change in location of their child
+   * ChildHandOffToken : send the dirs of children to a pulled particle to 
+   *                     make the particle take these children as its own
+   * 
+   */
+  struct ConvexificationStartToken : public LeaderElectionToken {
+    ConvexificationStartToken(int origin = -1) {
+      this->origin = origin;
+    }
+  };
+  struct ParentDirToken : public LeaderElectionToken {
+    ParentDirToken(int origin = -1) {
+      this->origin = origin;
+    }
+  };
+  struct ChildDirToken : public LeaderElectionToken {
+    ChildDirToken(int origin = -1) {
+      this->origin = origin;
+    }
+  };
+  struct ChildHandOffToken : public LeaderElectionToken {
+    set<int> childDirs;
+    int headDir;
+    ChildHandOffToken(int origin = -1, set<int> childDirs = {}, int headDir = 0) {
+      this->origin = origin;
+      this->childDirs = childDirs;
+      this->headDir = headDir;
     }
   };
 };
