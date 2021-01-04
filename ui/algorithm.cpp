@@ -15,6 +15,7 @@
 #include "alg/leaderelection_erosion.h"
 #include "alg/leaderelection_stationary_deterministic.h"
 #include "alg/leaderelection_deterministic.h"
+#include "alg/leaderelection_s-contraction.h"
 
 Algorithm::Algorithm(QString name, QString signature)
     : _name(name),
@@ -224,6 +225,25 @@ void LeaderElectionDeterministicAlg::save() {
   emit saveSystem();
 }
 
+LeaderElectionSContractionAlg::LeaderElectionSContractionAlg() :
+  Algorithm("Leader Election by S-Contraction", "leaderelection_s-contraction") {
+  addParameter("# Particles", "100");
+  addParameter("File name", "");
+}
+
+void LeaderElectionSContractionAlg::instantiate(const int numParticles, const QString fileName) {
+  if (numParticles <= 0 && fileName.size() == 0) {
+    emit log("# particles must be > 0 or file name must be given", true);
+  }
+  else {
+    emit setSystem(std::make_shared<LeaderElectionSContractionSystem>(numParticles, fileName));
+  }
+}
+
+void LeaderElectionSContractionAlg::save() {
+  emit saveSystem();
+}
+
 ShapeFormationAlg::ShapeFormationAlg() :
   Algorithm("Basic Shape Formation", "shapeformation") {
   addParameter("# Particles", "200");
@@ -265,6 +285,7 @@ AlgorithmList::AlgorithmList() {
   _algorithms.push_back(new LeaderElectionErosionAlg());
   _algorithms.push_back(new LeaderElectionStationaryDeterministicAlg());
   _algorithms.push_back(new LeaderElectionDeterministicAlg());
+  _algorithms.push_back(new LeaderElectionSContractionAlg());
   _algorithms.push_back(new ShapeFormationAlg());
 }
 

@@ -164,6 +164,18 @@ public slots:
   void save();
 };
 
+// S-Contraction Leader Election.
+class LeaderElectionSContractionAlg : public Algorithm {
+  Q_OBJECT
+
+public:
+  LeaderElectionSContractionAlg();
+
+public slots:
+  void instantiate(const int numParticles = 100, const QString fileName = "");
+  void save();
+};
+
 // Basic Shape Formation.
 class ShapeFormationAlg : public Algorithm {
   Q_OBJECT
