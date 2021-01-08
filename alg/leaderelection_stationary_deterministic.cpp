@@ -2212,7 +2212,6 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::lexCompC
     passNodeToken<LexCompCleanUpToken>(nextNodeDir, std::make_shared<LexCompCleanUpToken>());
   }
   countSent = false;
-  // intercept label tokens and remove them
   while (hasNodeToken<LexCompReturnStretchLabelToken>(nextNode()->prevNodeDir)) {
     takeNodeToken<LexCompReturnStretchLabelToken>(nextNode()->prevNodeDir);
   }
@@ -2224,6 +2223,12 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::lexCompC
   }
   while (hasNodeToken<LexCompEndOfStretchToken>(nextNode()->prevNodeDir)) {
     takeNodeToken<LexCompEndOfStretchToken>(nextNode()->prevNodeDir);
+  }
+  while (hasNodeToken<LexCompRetrieveNextLabelToken>(prevNode()->nextNodeDir)) {
+    takeNodeToken<LexCompRetrieveNextLabelToken>(prevNode()->nextNodeDir);
+  }
+  while (hasNodeToken<LexCompReqStretchLabelToken>(prevNode()->nextNodeDir)) {
+    takeNodeToken<LexCompReqStretchLabelToken>(prevNode()->nextNodeDir);
   }
 }
 
@@ -2242,6 +2247,9 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::lexCompC
   }
   while (hasNodeToken<LexCompEndOfStretchForNbrToken>(nextNode()->prevNodeDir)) {
     takeNodeToken<LexCompEndOfStretchForNbrToken>(nextNode()->prevNodeDir);
+  }
+  while (hasNodeToken<LexCompRetrieveNextLabelForNbrToken>(prevNode()->nextNodeDir)) {
+    takeNodeToken<LexCompRetrieveNextLabelForNbrToken>(prevNode()->nextNodeDir);
   }
 }
 

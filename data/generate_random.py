@@ -25,11 +25,11 @@ def is_connected(p, q, particles):
     return connected
 
 if __name__ == '__main__':
-    for i in tqdm(range(0, 10)):
+    for i in tqdm(range(0, 100)):
         filename = f"random_{i}.txt"
         if os.path.isfile(filename):
             continue
-        size = random.randint(min_particles, max_particles)
+        size = min_particles + i * 10
         particles = [[0, 0]]
 
         while len(particles) < size:

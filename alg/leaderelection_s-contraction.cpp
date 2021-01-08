@@ -235,7 +235,7 @@ LeaderElectionSContractionSystem::LeaderElectionSContractionSystem(int numPartic
   }
 
   randomPermutationScheduler = true;
-  randomReshuffleProb = 0.1;
+  // randomReshuffleProb = 0.1;
 
   // Insert the seed at (0,0).
   insert(new LeaderElectionSContractionParticle(

@@ -1021,6 +1021,7 @@ void LeaderElectionDeterministicParticle::activate() {
     }
   }
   else if (state == State::Convexification || state == State::ConvexificationCandidate) {
+    qDebug() << "Particle: " + QString::number(head.x) + ", " + QString::number(head.y);
     if (state == State::ConvexificationCandidate && !convexificationStarted) {
       for (int childDir : children) {
         LeaderElectionDeterministicParticle &child = nbrAtLabel(childDir);
@@ -1055,7 +1056,6 @@ void LeaderElectionDeterministicParticle::activate() {
     if (isContracted()) {
       if (hasToken<ParentDirToken>()) {
         std::shared_ptr<ParentDirToken> token = takeToken<ParentDirToken>();
-        qDebug() << "Particle: " + QString::number(head.x) + ", " + QString::number(head.y);
         qDebug() << "Received parent dir update: " + QString::number(parent) + " -> " + QString::number(globalToLocalDir(token->origin));
         parent = globalToLocalDir(token->origin);
       }
