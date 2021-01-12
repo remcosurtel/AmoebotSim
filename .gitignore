@@ -15,3 +15,9 @@ docs/build/*
 .vscode/settings.json
 data/input*
 data/output*
+*.xlsx
+*.csv
+data/results.py
+data/results_ellipse.py
+data/results_random.py
+data/results_tree.py

@@ -818,6 +818,8 @@ void LeaderElectionErosionParticle::activate() {
         sendEncodingCandidates(encoding);
         encodingSent = true;
 
+        sentEncodingRequest = false;
+
         stateStable = true;
         return;
       } else if (hasToken<SubTreeExhaustedToken>()) {
@@ -1290,7 +1292,18 @@ QString LeaderElectionErosionParticle::inspectionText() const {
   text += "stateStable: " + QString::number(stateStable) + "\n";
   text += "has leader election tokens: " +
           QString::number(countTokens<LeaderElectionToken>()) + "\n";
+  text += "parent: " + QString::number(parent) + "\n";
+  text += "children: ";
+  for (int child : children) {
+    if (!text.endsWith(": ")) {
+      text += ", ";
+    }
+    text += QString::number(child);
+  }
   text += "\n";
+  text += "numCandidates: " + QString::number(numCandidates) + "\n";
+  text += "Candidate encoding tokens: " + QString::number(countTokens<EncodingTokenCandidate>()) + "\n";
+  text += "encodingSent: " + QString::number(encodingSent) + "\n";
 
   return text;
 }

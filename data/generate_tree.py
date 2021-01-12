@@ -11,11 +11,11 @@ def get_nbrs(x, y):
             [x+1, y-1], [x-1, y+1]]
 
 if __name__ == '__main__':
-    for i in tqdm(range(0, 10)):
+    for i in tqdm(range(0, 21)):
         filename = f"tree_{i}.txt"
         if os.path.isfile(filename):
             continue
-        size = random.randint(min_particles, max_particles)
+        size = min_particles if i == 0 else i * 25
         particles = [[0, 0]]
 
         while len(particles) < size:
