@@ -1035,6 +1035,8 @@ LeaderElectionSystem::LeaderElectionSystem(int numParticles, double holeProb, QS
   Q_ASSERT(numParticles > 0 || fileName.size() > 0);
   Q_ASSERT((0 <= holeProb && holeProb <= 1) || fileName.size() > 0);
 
+  randomPermutationScheduler = true;
+
   string filePath = "../AmoebotSim/data/input/" + fileName.toStdString() + ".txt";
   if (fileName != "") {
     QTextStream out(stdout);

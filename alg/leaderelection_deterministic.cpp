@@ -1548,6 +1548,8 @@ using namespace std;
 LeaderElectionDeterministicSystem::LeaderElectionDeterministicSystem(int numParticles, QString fileName) {
   Q_ASSERT(numParticles > 0 || fileName.size() > 0);
 
+  randomPermutationScheduler = true;
+
   string filePath = "../AmoebotSim/data/input/" + fileName.toStdString() + ".txt";
   if (fileName != "") {
     QTextStream out(stdout);
@@ -1586,9 +1588,6 @@ LeaderElectionDeterministicSystem::LeaderElectionDeterministicSystem(int numPart
     
     return;
   }
-
-  randomPermutationScheduler = true;
-  randomReshuffleProb = 0.1;
 
   // Insert the seed at (0,0).
   insert(new LeaderElectionDeterministicParticle(
