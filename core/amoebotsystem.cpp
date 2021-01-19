@@ -47,6 +47,7 @@ void AmoebotSystem::activate() {
     // modified behavior: activate the next particle 
     // in a random permutation of the particles
     if (permutationIndex == 0) {
+      rng.seed(time(0));
       std::shuffle(std::begin(particles), std::end(particles), rng);
     }
     particles.at(permutationIndex)->activate();
