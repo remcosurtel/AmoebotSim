@@ -243,7 +243,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
     }
   }
   else if (state == State::TreeFormation) {
-    qDebug() << "TreeFormation particle running...";
+    // qDebug() << "TreeFormation particle running...";
     // process and pass cleanup tokens
     if (hasToken<CleanUpToken>()) {
       qDebug() << "Processing cleanup token...";
@@ -324,6 +324,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
         }
       }
       // particles on the border that have not received a child token...
+      /*
       else {
         int dir;
         for (dir = 0; dir < 6; dir++) {
@@ -339,6 +340,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
         nbr.putToken(std::make_shared<ParentToken>(localToGlobalDir(parent)));
         tree = true;
       }
+      */
     }
     // if no non-tree neighbours and all children have treeDone -> set treeDone
     if (!treeDone && tree) {
