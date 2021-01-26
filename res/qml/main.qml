@@ -6,6 +6,7 @@ import QtQuick 2.2
 import QtQuick.Controls 1.4
 import QtQuick.Controls.Styles 1.1
 import QtQuick.Layouts 1.1
+import QtQuick.Dialogs 1.0
 
 import VisItem 1.0
 
@@ -28,6 +29,8 @@ ApplicationWindow {
   signal algSelected(string algName)
   signal instantiate(string algName)
   signal save(string algName)
+
+  signal runScript(string scriptPath)
 
   signal start()
   signal stop()
@@ -239,6 +242,35 @@ ApplicationWindow {
       onClicked: {
         vis.forceActiveFocus()
         save(algorithmSelectBox.currentText)
+      }
+    }
+    
+    A_Button {
+      id: runScriptButton
+      text: "Run Script"
+      Layout.preferredWidth: parent.width
+
+      onClicked: {
+        runScriptFileDialog.open()
+      }
+    }
+
+    FileDialog {
+      id: runScriptFileDialog
+      objectName: "runScriptFileDialog"
+      title: "Choose script file"
+      nameFilters: [ "JavaScript files (*.js)" ]
+      selectedNameFilter: "JavaScript files (*.js)"
+
+      property string executableDir: ""
+
+      onAccepted: {
+        var scriptPath = fileUrl.toString().replace("file:///" + executableDir + "/", "")
+        runScript(scriptPath)
+        log("Ran script: " + scriptPath, false)
+      }
+      onRejected: {
+        log("No script selected", true)
       }
     }
 
