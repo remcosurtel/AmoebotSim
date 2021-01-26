@@ -17,7 +17,7 @@
 #include "alg/leaderelection_erosion.h"
 #include "alg/leaderelection_stationary_deterministic.h"
 #include "alg/leaderelection_deterministic.h"
-#include "alg/leaderelection_s-contraction.h"
+#include "alg/leaderelection_scontraction.h"
 
 Algorithm::Algorithm(QString name, QString signature)
     : _name(name),
@@ -298,7 +298,7 @@ void LeaderElectionDeterministicAlg::save() {
 }
 
 LeaderElectionSContractionAlg::LeaderElectionSContractionAlg() :
-  Algorithm("Leader Election by S-Contraction", "leaderelection_s-contraction") {
+  Algorithm("Leader Election by S-Contraction", "leaderelection_scontraction") {
   addParameter("# Particles", "100");
   addParameter("File name", "");
 }

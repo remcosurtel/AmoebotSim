@@ -40,7 +40,7 @@ HEADERS += \
 	alg/leaderelection_erosion.h \
     alg/leaderelection_stationary_deterministic.h \
     alg/leaderelection_deterministic.h \
-	alg/leaderelection_s-contraction.h
+	alg/leaderelection_scontraction.h
 
 SOURCES += \
     alg/demo/ballroomdemo.cpp \
@@ -74,7 +74,7 @@ SOURCES += \
 	alg/leaderelection_erosion.cpp \
     alg/leaderelection_stationary_deterministic.cpp \
     alg/leaderelection_deterministic.cpp \
-	alg/leaderelection_s-contraction.cpp
+	alg/leaderelection_scontraction.cpp
 
 RESOURCES += \
     res/qml.qrc \

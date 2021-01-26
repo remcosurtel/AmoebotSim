@@ -117,7 +117,7 @@ void ParameterListModel::createSystem(QString algName) {
   } else if (signature == "leaderelection_deterministic") {
       dynamic_cast<LeaderElectionDeterministicAlg*>(alg)->
           instantiate(params[0].toInt(), params[1]);
-  } else if (signature == "leaderelection_s-contraction") {
+  } else if (signature == "leaderelection_scontraction") {
       dynamic_cast<LeaderElectionSContractionAlg*>(alg)->
           instantiate(params[0].toInt(), params[1]);
   } else {
@@ -147,6 +147,9 @@ void ParameterListModel::saveSystem(QString algName) {
           save();
   } else if (signature == "leaderelection_deterministic") {
       dynamic_cast<LeaderElectionDeterministicAlg*>(alg)->
+          save();
+  } else if (signature == "leaderelection_scontraction") {
+      dynamic_cast<LeaderElectionSContractionAlg*>(alg)->
           save();
   } else {
     // An unrecognized signature has been entered.

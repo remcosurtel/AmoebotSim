@@ -8,7 +8,7 @@
  * By Nicolas Gastineau, Wahabou Abdou, Nader Mbarek, and  Olivier Togni.
  * https://arxiv.org/abs/1807.10461 */
 
-#include "alg/leaderelection_s-contraction.h"
+#include "alg/leaderelection_scontraction.h"
 
 #include <set>
 
