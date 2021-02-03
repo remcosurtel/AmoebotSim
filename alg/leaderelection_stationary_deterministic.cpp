@@ -49,7 +49,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
     }
     else {
       // Initialize 6 nodes
-      qDebug() << "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ Initializing nodes... @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@";
+      // qDebug() << "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ Initializing nodes... @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@";
       for (int dir = 0; dir < 6; dir++) {
         if (!hasNbrAtLabel((dir + 1) % 6) || !hasNbrAtLabel(dir)) {
           LeaderElectionNode* node = new LeaderElectionNode();
@@ -210,6 +210,9 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
       else if (node->terminationDetectionInitiated && node->predecessor == nullptr) {
         node->paintNode(0xff0000); // Red
       }
+      else if (node->hasNodeToken<TerminationDetectionReturnToken>(node->nextNode()->prevNodeDir) && node->predecessor == nullptr) {
+        node->paintNode(0x0046ff); // Blue
+      }
       else if (node->lexicographicComparisonRight) {
         node->paintNode(0x00ff00); // Green
       }
@@ -221,6 +224,15 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
       }
       else if (node->hasNodeToken<TerminationDetectionReturnToken>(node->prevNode()->nextNodeDir)) {
         node->paintNode(0x00aeff); // Light blue
+      }
+      else if (node->retrieved && node->retrievedForNbr) {
+        node->paintNode(0x5b5b5b); // Darker grey
+      }
+      else if (node->retrieved) {
+        node->paintNode(0x8d8d8d); // Dark grey
+      }
+      else if (node->retrievedForNbr) {
+        node->paintNode(0xc6c6c6); // Light grey
       }
       else {
         node->paintNode(0x000000); // Black
@@ -246,7 +258,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
     // qDebug() << "TreeFormation particle running...";
     // process and pass cleanup tokens
     if (hasToken<CleanUpToken>()) {
-      qDebug() << "Processing cleanup token...";
+      // qDebug() << "Processing cleanup token...";
       takeToken<CleanUpToken>();
       treeDone = false;
       nbrhdEncodingSentRight = false;
@@ -270,7 +282,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
     }
     // receive parent tokens -> add to children
     while (hasToken<ParentToken>()) {
-      qDebug() << "Processing parent token...";
+      // qDebug() << "Processing parent token...";
       std::shared_ptr<ParentToken> token = takeToken<ParentToken>();
       int globalParentDir = token->origin;
       int localParentDir = globalToLocalDir(globalParentDir);
@@ -279,12 +291,12 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
     }
     // If not in tree, attempt to join a tree
     if (!tree) {
-      qDebug() << "Not in tree...";
+      // qDebug() << "Not in tree...";
       // for particles on the border
       // receive childTokens from stretch predecessor to join the tree
       // with the head of the stretch as root
       if (hasToken<ChildToken>()) {
-        qDebug() << "Processing child token...";
+        // qDebug() << "Processing child token...";
         std::shared_ptr<ChildToken> token = takeToken<ChildToken>();
         int globalParentDir = token->origin;
         int localParentDir = globalToLocalDir(globalParentDir);
@@ -301,7 +313,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
             }
             LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(node->nextNodeDir);
             if (!nbr.tree) {
-              qDebug() << "Forwarding child token...";
+              // qDebug() << "Forwarding child token...";
               nbr.putToken(std::make_shared<ChildToken>(localToGlobalDir(node->nextNodeDir)));
             }
             break;
@@ -310,7 +322,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
       }
       // If not on the border, then join any adjacent particle's tree
       else if (nodes.size() == 0) {
-        qDebug() << "Attempting to join a tree...";
+        // qDebug() << "Attempting to join a tree...";
         for (int dir = 0; dir < 6; dir++) {
           if (hasNbrAtLabel(dir)) {
             LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(dir);
@@ -344,7 +356,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
     }
     // if no non-tree neighbours and all children have treeDone -> set treeDone
     if (!treeDone && tree) {
-      qDebug() << "In tree but not treeDone...";
+      // qDebug() << "In tree but not treeDone...";
       bool done = true;
       for (int dir = 0; dir < 6; dir++) {
         if (hasNbrAtLabel(dir)) {
@@ -369,7 +381,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
     }
     // receive TreeComparisonStartTokens and advance to next phase
     if (hasToken<TreeComparisonStartToken>()) {
-      qDebug() << "Processing tree comparison start token...";
+      // qDebug() << "Processing tree comparison start token...";
       takeToken<TreeComparisonStartToken>();
       state = State::TreeComparison;
       for(int childDir : children) {
@@ -379,7 +391,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
     }
     else if (parent >= 0 && treeDone) {
       if ((nbrAtLabel(parent).treeFormationDone || nbrAtLabel(parent).state == State::TreeComparison)) {
-        qDebug() << "Changing state to TreeComparison...";
+        // qDebug() << "Changing state to TreeComparison...";
         state = State::TreeComparison;
         for(int childDir : children) {
           LeaderElectionStationaryDeterministicParticle &child = nbrAtLabel(childDir);
@@ -392,7 +404,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
           if (hasNbrAtLabel(dir)) {
             LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(dir);
             if (nbr.state == State::TreeComparison || nbr.treeFormationDone) {
-              qDebug() << "Changing state to TreeComparison...";
+              // qDebug() << "Changing state to TreeComparison...";
               state = State::TreeComparison;
               for(int childDir : children) {
                 LeaderElectionStationaryDeterministicParticle &child = nbrAtLabel(childDir);
@@ -406,7 +418,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
     }
     // receive and pass TreeFormationFinishedTokens
     while (hasToken<TreeFormationFinishedToken>()) {
-      qDebug() << "Processing tree formation finished token...";
+      // qDebug() << "Processing tree formation finished token...";
       std::shared_ptr<TreeFormationFinishedToken> token = takeToken<TreeFormationFinishedToken>();
       int nextDir = getNextDir((globalToLocalDir(token->origin) + 3) % 6);
       LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(nextDir);
@@ -414,14 +426,14 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
     }
   }
   else if (state == State::Candidate) {
-    qDebug() << "Candidate particle running... (" << QString::number(head.x) << ", " << QString::number(head.y) << ")";
+    // qDebug() << "Candidate particle running... (" << QString::number(head.x) << ", " << QString::number(head.y) << ")";
     // Set the number of candidates when a candidate is activated for the first time
     if (numCandidates == 0) {
       numCandidates = 6 / headCount;
     }
     // receive parent tokens -> add to children
     while (hasToken<ParentToken>()) {
-      qDebug() << "Processing parent token...";
+      // qDebug() << "Processing parent token...";
       std::shared_ptr<ParentToken> token = takeToken<ParentToken>();
       int globalParentDir = token->origin;
       int localParentDir = globalToLocalDir(globalParentDir);
@@ -430,7 +442,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
     }
     // send childTokens to particle(s) containing next node of the stretch
     if (!childTokensSent) {
-      qDebug() << "Sending child tokens...";
+      // qDebug() << "Sending child tokens...";
       for (int i = 0; i < nodes.size(); i++) {
         LeaderElectionNode* node = nodes[i];
         if (node->predecessor == nullptr) {
@@ -451,7 +463,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
     if (treeComparisonReady) {
       // Send comparison result token to all other candidates
       if (comparisonDone && !comparisonSent) {
-        qDebug() << "Sending comparison result...";
+        // qDebug() << "Sending comparison result...";
         LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(nextDirCandidate);
         nbr.putToken(std::make_shared<ComparisonResultToken>(localToGlobalDir(nextDirCandidate), numCandidates, 1, comparisonResult));
         comparisonSent = true;
@@ -462,7 +474,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
       // receive comparison results from other candidates
       if (comparisonDone && comparisonsReceived < numCandidates) {
         while (hasToken<ComparisonResultToken>()) {
-          qDebug() << "Processing comparison result token...";
+          // qDebug() << "Processing comparison result token...";
           std::shared_ptr<ComparisonResultToken> token = takeToken<ComparisonResultToken>();
           int index = 1 + (token->ttl - (token->traversed + 1));
           comparisonResults[index] = token->result;
@@ -476,15 +488,15 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
       }
       // Eliminate candidates based on received comparison results
       if (comparisonDone && comparisonsReceived == numCandidates) {
-        qDebug() << "Processing comparison results...";
+        // qDebug() << "Processing comparison results...";
         for (int res : comparisonResults) {
-          qDebug() << QString::number(res);
+          // qDebug() << QString::number(res);
         }
         set<std::vector<int>> seqs = getMaxNonDescSubSeq(comparisonResults);
         for (std::vector<int> seq : seqs) {
-          qDebug() << "Processing maximal non-descending subsequence...";
+          // qDebug() << "Processing maximal non-descending subsequence...";
           for (int s : seq) {
-            qDebug() << QString::number(s);
+            // qDebug() << QString::number(s);
           }
           // If all candidates are equal, there is unbreakable symmetry
           if (seq.size() == numCandidates + 1) {
@@ -559,7 +571,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
       }
       // receive encoding request tokens from other candidates
       while (hasToken<RequestCandidateEncodingToken>()) {
-        qDebug() << "Processing candidate encoding request token...";
+        // qDebug() << "Processing candidate encoding request token...";
         std::shared_ptr<RequestCandidateEncodingToken> token = takeToken<RequestCandidateEncodingToken>();
         // If token is intended for other candidate, pass it on
         if (token->traversed + 1 != token->ttl) {
@@ -573,7 +585,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
 
       // receive tree exhausted tokens from other candidates
       while (hasToken<CandidateTreeExhaustedToken>()) {
-        qDebug() << "Processing candidate tree exhausted token...";
+        // qDebug() << "Processing candidate tree exhausted token...";
         std::shared_ptr<CandidateTreeExhaustedToken> token = takeToken<CandidateTreeExhaustedToken>();
         // if token is intended for other candidate, pass it on
         if (token->traversed + 1 != token->ttl) {
@@ -589,7 +601,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
       }
       // Receive neighbourhood encodings from other candidates
       while (hasToken<CandidateEncodingToken>()) {
-        qDebug() << "Processing candidate encoding token...";
+        // qDebug() << "Processing candidate encoding token...";
         std::shared_ptr<CandidateEncodingToken> token = takeToken<CandidateEncodingToken>();
         // if token is intended for other candidate, pass it on
         if (token->traversed + 1 != token->ttl) {
@@ -606,14 +618,14 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
 
       // request encoding from right stretch
       if (!nbrEncodingRequested && !nbrEncodingReceived && !comparisonDone) {
-        qDebug() << "Requesting encoding from right stretch...";
+        // qDebug() << "Requesting encoding from right stretch...";
         LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(nextDirCandidate);
         nbr.putToken(std::make_shared<RequestCandidateEncodingToken>(localToGlobalDir(nextDirCandidate), 2, 1));
         nbrEncodingRequested = true;
       }
       // request encodings from tree for comparison with right stretch
       if (!encodingRequestedRight && !encodingReceivedRight && !comparisonDone) {
-        qDebug() << "Requesting right encoding from tree...";
+        // qDebug() << "Requesting right encoding from tree...";
         // first step: use own neighborhood encoding
         if (!nbrhdEncodingSentRight) {
           currentEncodingRight = getNeighborhoodEncoding();
@@ -653,7 +665,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
       // receive encodings from tree for comparison with right stretch
       if (encodingRequestedRight && !encodingReceivedRight) {
         if (hasToken<EncodingRightToken>()) {
-          qDebug() << "Processing right encoding token...";
+          // qDebug() << "Processing right encoding token...";
           std::shared_ptr<EncodingRightToken> token = takeToken<EncodingRightToken>();
           currentEncodingRight = token->encoding;
           encodingRequestedRight = false;
@@ -661,7 +673,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
         }
         // receive subtree exhausted tokens
         else if (hasToken<SubTreeExhaustedRightToken>()) {
-          qDebug() << "Processing right subtree exhausted token...";
+          // qDebug() << "Processing right subtree exhausted token...";
           std::shared_ptr<SubTreeExhaustedRightToken> token = takeToken<SubTreeExhaustedRightToken>();
           int dir = (globalToLocalDir(token->origin) + 3) % 6;
           childrenExhaustedRight.insert(dir);
@@ -670,7 +682,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
       }
       // compare both encodings
       if (encodingReceivedRight && nbrEncodingReceived) {
-        qDebug() << "Comparing encodings...";
+        // qDebug() << "Comparing encodings...";
         // own tree exhausted -> smaller
         if (treeExhaustedRight && !nbrTreeExhausted) {
           comparisonResult = -1;
@@ -714,7 +726,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
 
       // request encoding from tree for left stretch
       if (nbrEncodingRequestReceived && !encodingRequestedLeft && !encodingReceivedLeft) {
-        qDebug() << "Requesting left encoding from tree...";
+        // qDebug() << "Requesting left encoding from tree...";
         // first step: use own neighborhood encoding
         if (!nbrhdEncodingSentLeft) {
           currentEncodingLeft = getNeighborhoodEncoding();
@@ -754,7 +766,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
       // receive requested encoding from tree for left stretch
       if (nbrEncodingRequestReceived && encodingRequestedLeft && !encodingReceivedLeft) {
         if (hasToken<EncodingLeftToken>()) {
-          qDebug() << "Processing left encoding token...";
+          // qDebug() << "Processing left encoding token...";
           std::shared_ptr<EncodingLeftToken> token = takeToken<EncodingLeftToken>();
           currentEncodingLeft = token->encoding;
           encodingRequestedLeft = false;
@@ -762,7 +774,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
         }
         // receive subtree exhausted tokens
         else if (hasToken<SubTreeExhaustedLeftToken>()) {
-          qDebug() << "Processing left subtree exhausted token...";
+          // qDebug() << "Processing left subtree exhausted token...";
           std::shared_ptr<SubTreeExhaustedLeftToken> token = takeToken<SubTreeExhaustedLeftToken>();
           int dir = (globalToLocalDir(token->origin) + 3) % 6;
           childrenExhaustedLeft.insert(dir);
@@ -771,7 +783,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
       }
       // send encodings to left stretch
       if (nbrEncodingRequestReceived && encodingReceivedLeft) {
-        qDebug() << "Sending encoding to left stretch...";
+        // qDebug() << "Sending encoding to left stretch...";
         if (!treeExhaustedLeft) {
           LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(nextDirCandidate);
           nbr.putToken(std::make_shared<CandidateEncodingToken>(localToGlobalDir(nextDirCandidate), numCandidates, 1, currentEncodingLeft));
@@ -788,7 +800,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
     }
     // if no non-tree neighbours and all children have treeDone -> set treeDone
     if (!treeDone) {
-      qDebug() << "Evaluating treeDone...";
+      // qDebug() << "Evaluating treeDone...";
       bool done = true;
       for (int dir = 0; dir < 6; dir++) {
         if (hasNbrAtLabel(dir)) {
@@ -810,7 +822,7 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
     }
     // when treeDone, send tokens throughout tree and to other candidates to move to comparison phase
     if (treeDone && !treeFormationDone) {
-      qDebug() << "Sending TreeComparisonStartTokens...";
+      // qDebug() << "Sending TreeComparisonStartTokens...";
       // send tokens to other candidates to communicate that tree formation is finished
       LeaderElectionStationaryDeterministicParticle &nbr = nbrAtLabel(nextDirCandidate);
       nbr.putToken(std::make_shared<TreeFormationFinishedToken>(localToGlobalDir(nextDirCandidate), numCandidates, 1));
@@ -823,11 +835,11 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
         }
       }
       treeFormationDone = true;
-      qDebug() << "Tree formation done";
+      // qDebug() << "Tree formation done";
     }
     // receive TreeFormationFinishedTokens and pass them on if applicable
     while (hasToken<TreeFormationFinishedToken>() && treeFormationDone && !treeComparisonReady) {
-      qDebug() << "Processing TreeFormationFinishedToken...";
+      // qDebug() << "Processing TreeFormationFinishedToken...";
       std::shared_ptr<TreeFormationFinishedToken> token = takeToken<TreeFormationFinishedToken>();
       treeFormationFinishedTokensReceived += 1;
       // pass token if necessary
@@ -839,11 +851,11 @@ void LeaderElectionStationaryDeterministicParticle::activate() {
     if (treeFormationFinishedTokensReceived >= numCandidates) {
       treeComparisonReady = true;
       treeFormationFinishedTokensReceived = 0;
-      qDebug() << "Ready for tree comparison";
+      // qDebug() << "Ready for tree comparison";
     }
   }
   else if (state == State::TreeComparison) {
-    qDebug() << "TreeComparison particle running...";
+    // qDebug() << "TreeComparison particle running...";
     if (!treeDone) {
       state = State::TreeFormation;
     }
@@ -1293,12 +1305,12 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
       // This node is the head of a stretch
       // Process termination detection tokens
       if (hasNodeToken<TerminationDetectionToken>(nextNode()->prevNodeDir)) {
-        qDebug() << "Head has termination detection token...";
+        // qDebug() << "Head has termination detection token...";
         std::shared_ptr<TerminationDetectionToken> token = peekNodeToken<TerminationDetectionToken>(nextNode()->prevNodeDir);
-        qDebug() << "Peeked at the token...";
+        // qDebug() << "Peeked at the token...";
         if (token->counter != count) {
           // Different count -> send token back, no termination
-          qDebug() << "Different count -> no termination";
+          // qDebug() << "Different count -> no termination";
           takeNodeToken<TerminationDetectionToken>(nextNode()->prevNodeDir);
           passNodeToken<TerminationDetectionReturnToken>(nextNodeDir, std::make_shared<TerminationDetectionReturnToken>(-1, token->counter, token->traversed, 0, false));
         }
@@ -1311,7 +1323,7 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
             lexCompInit = true;
             lexCompTryMerge = false;
           }
-          qDebug() << "Same count; waiting for lexicographic comparison...";
+          // qDebug() << "Same count; waiting for lexicographic comparison...";
         }
       }
       // Pass termination detection return tokens
@@ -1324,12 +1336,12 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
         }
         if (token->traversed + 1 >= token->ttl) {
           if (terminationDetectionInitiated) {
-            qDebug() << "Received termination detection return token";
+            // qDebug() << "Received termination detection return token";
             if (termination) {
               if (count == 6) {
                 // Single stretch with count 6 covering the outer border
                 // Head becomes leader
-                qDebug() << "Terminating...";
+                // qDebug() << "Terminating...";
                 particle->state = State::Leader;
                 terminationDetectionInitiated = false;
                 return;
@@ -1337,7 +1349,7 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
               else {
                 // Multiple lexicographically equal stretches covering the border
                 // Move to next state -> Trees to break symmetry
-                qDebug() << "Trees to break symmetry";
+                // qDebug() << "Trees to break symmetry";
                 particle->state = State::Candidate;
                 particle->tree = true;
                 particle->headCount = count;
@@ -1346,13 +1358,13 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
               }
             }
             else {
-              qDebug() << "Not terminating...";
+              // qDebug() << "Not terminating...";
               terminationDetectionInitiated = false;
             }
           }
         }
         else {
-          qDebug() << "Passing termination detection return token back";
+          // qDebug() << "Passing termination detection return token back";
           passNodeToken<TerminationDetectionReturnToken>(nextNodeDir, std::make_shared<TerminationDetectionReturnToken>(-1, token->counter, token->ttl, token->traversed+1, termination));
         }
       }
@@ -1362,8 +1374,11 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
       if (hasNodeToken<LexCompAckToken>(nextNode()->prevNodeDir)) {
         takeNodeToken<LexCompAckToken>(nextNode()->prevNodeDir);
         if (lexCompInit && !lexicographicComparisonRight) {
+          lexCompCleanUp();
+          lexCompInit = true;
           lexicographicComparisonRight = true;
-          qDebug() << "Starting lexicographic comparison...";
+          // qDebug() << "Starting lexicographic comparison...";
+          return;
         }
       }
       // If nack token received -> abort lexicographic comparison
@@ -1375,13 +1390,13 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
       }
       // If interrupt token received, cancel lexicographic comparison
       if (hasNodeToken<LexCompInterruptLeftToken>(nextNode()->prevNodeDir)) {
-        qDebug() << "Processing interrupt token from right...";
+        // qDebug() << "Processing interrupt token from right...";
         takeNodeToken<LexCompInterruptLeftToken>(nextNode()->prevNodeDir);
         lexCompCleanUp();
         return;
       }
       if (hasNodeToken<LexCompInterruptRightToken>(prevNode()->nextNodeDir)) {
-        qDebug() << "Processing interrupt token from left...";
+        // qDebug() << "Processing interrupt token from left...";
         takeNodeToken<LexCompInterruptRightToken>(prevNode()->nextNodeDir);
         lexCompCleanUpForNbr();
         return;
@@ -1392,7 +1407,12 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
         int value = token->value;
         if (value == count && !lexicographicComparisonLeft) {
           passNodeToken<LexCompAckToken>(prevNodeDir, std::make_shared<LexCompAckToken>());
+          lexCompCleanUpForNbr();
           lexicographicComparisonLeft = true;
+          while (hasNodeToken<LexCompNextLabelForNbrToken>(nextNode()->prevNodeDir)) {
+            takeNodeToken<LexCompNextLabelForNbrToken>(nextNode()->prevNodeDir);
+          }
+          return;
         }
         else {
           passNodeToken<LexCompNackToken>(prevNodeDir, std::make_shared<LexCompNackToken>());
@@ -1449,23 +1469,23 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
         }
         // If both labels received, compare them
         if (receivedNbrLabel && receivedLabel) {
-          qDebug() << "Comparing received labels: " + QString::number(internalLabel) + " & " + QString::number(NbrLabel);
+          // qDebug() << "Comparing received labels: " + QString::number(internalLabel) + " & " + QString::number(NbrLabel);
           // If all labels thus far have been the same
           if (firstLargerLabel == 0) {
             // Then if the labels are different, remember which was larger
             if (internalLabel > NbrLabel) {
-              qDebug() << "Set first larger label for self.";
+              // qDebug() << "Set first larger label for self.";
               firstLargerLabel = 1;
             }
             else if (internalLabel < NbrLabel) {
-              qDebug() << "Set first larger for neighbour.";
+              // qDebug() << "Set first larger for neighbour.";
               firstLargerLabel = -1;
             }
           }
           if (firstLargerLabel != 0) {
             // Send back termination detection token -> no termination
             if (hasNodeToken<TerminationDetectionToken>(nextNode()->prevNodeDir)) {
-              qDebug() << "Lexicographically inequal -> no termination";
+              // qDebug() << "Lexicographically inequal -> no termination";
               std::shared_ptr<TerminationDetectionToken> token = takeNodeToken<TerminationDetectionToken>(nextNode()->prevNodeDir);
               passNodeToken<TerminationDetectionReturnToken>(nextNodeDir, std::make_shared<TerminationDetectionReturnToken>(-1, token->counter, token->traversed, 0, false));
             }
@@ -1473,21 +1493,21 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
           // If one of the labels is 0, then the stretch has exhausted all its labels
           // In this case, the other stretch is lexicographically larger
           if (internalLabel == 0 && NbrLabel != 0) {
-            qDebug() << "Adjacent stretch is lexicographically larger";
+            // qDebug() << "Adjacent stretch is lexicographically larger";
             // Adjacent stretch is lexicographically larger -> no merge
             passNodeToken<LexCompInterruptRightToken>(nextNodeDir, std::make_shared<LexCompInterruptRightToken>());
-            qDebug() << "Sent interrupt token";
+            // qDebug() << "Sent interrupt token";
             lexCompCleanUp();
-            qDebug() << "Cleaned up";
+            // qDebug() << "Cleaned up";
           }
           else if (internalLabel != 0 && NbrLabel == 0) {
             // This stretch is lexicographically larger -> merge
-            qDebug() << "This stretch is lexicographically larger";
+            // qDebug() << "This stretch is lexicographically larger";
             lexCompCleanUp();
-            qDebug() << "Cleaned up";
+            // qDebug() << "Cleaned up";
             // Merge
             if (lexCompTryMerge) {
-              qDebug() << "Attempting merge...";
+              // qDebug() << "Attempting merge...";
               passNodeToken<LexCompAttemptMergeToken>(nextNodeDir, std::make_shared<LexCompAttemptMergeToken>(-1, count));
               mergePending = true;
               mergeAck = false;
@@ -1497,21 +1517,21 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
           // If both labels are 0, then both strings were of the same length
           else if (internalLabel == 0 && NbrLabel == 0) {
             // In this case, the string which had the first larger label is lexicographically larger
-            qDebug() << "Stretches are of same length";
+            // qDebug() << "Stretches are of same length";
             if (firstLargerLabel == -1) {
               // Adjacent stretch is lexicographically larger -> no merge
-              qDebug() << "But adjacent stretch is lexicographically larger";
+              // qDebug() << "But adjacent stretch is lexicographically larger";
               lexCompCleanUp();
-              qDebug() << "Cleaned up";
+              // qDebug() << "Cleaned up";
             }
             else if (firstLargerLabel == 1) {
               // This stretch is lexicographically larger -> merge
-              qDebug() << "But this stretch is lexicographically larger";
+              // qDebug() << "But this stretch is lexicographically larger";
               lexCompCleanUp();
-              qDebug() << "Cleaned up";
+              // qDebug() << "Cleaned up";
               // Merge
               if (lexCompTryMerge) {
-                qDebug() << "Attempting merge...";
+                // qDebug() << "Attempting merge...";
                 passNodeToken<LexCompAttemptMergeToken>(nextNodeDir, std::make_shared<LexCompAttemptMergeToken>(-1, count));
                 mergePending = true;
                 mergeAck = false;
@@ -1520,9 +1540,9 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
             }
             // If both strings were identical, then trigger termination detection
             else {
-              qDebug() << "Stretches are lexicographically equal";
+              // qDebug() << "Stretches are lexicographically equal";
               lexCompCleanUp();
-              qDebug() << "Cleaned up";
+              // qDebug() << "Cleaned up";
               /*
                * Termination detection
                * 
@@ -1558,13 +1578,13 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
                */
 
               if ((count == 1 || count == 2 || count == 3) && !terminationDetectionInitiated) {
-                qDebug() << "Lexicographically equal -> starting termination detection...";
+                // qDebug() << "Lexicographically equal -> starting termination detection...";
                 passNodeToken<TerminationDetectionToken>(prevNodeDir, std::make_shared<TerminationDetectionToken>(-1, count, 6/count, 0));
                 terminationDetectionInitiated = true;
               }
               else if (count == 6) {
                 // Border covered by 1 stretch of count 6
-                qDebug() << "Lexicographically equal with count 6 -> terminating...";
+                // qDebug() << "Lexicographically equal with count 6 -> terminating...";
                 particle->state = State::Leader;
                 return;
               }
@@ -1572,14 +1592,14 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
               // If termination detection token, send to next stretch
               // or if last stretch, return to initiator with termination set to true
               if (hasNodeToken<TerminationDetectionToken>(nextNode()->prevNodeDir)) {
-                qDebug() << "Head has termination detection token AND lexicographically equal";
+                // qDebug() << "Head has termination detection token AND lexicographically equal";
                 std::shared_ptr<TerminationDetectionToken> token = takeNodeToken<TerminationDetectionToken>(nextNode()->prevNodeDir);
                 if (token->traversed + 1 >= token->ttl) {
-                  qDebug() << "Sending termination token back";
+                  // qDebug() << "Sending termination token back";
                   passNodeToken<TerminationDetectionReturnToken>(nextNodeDir, std::make_shared<TerminationDetectionReturnToken>(-1, token->counter, token->traversed+1, 0, true));
                 }
                 else {
-                  qDebug() << "Passing termination detection token to next head";
+                  // qDebug() << "Passing termination detection token to next head";
                   passNodeToken<TerminationDetectionToken>(prevNodeDir, std::make_shared<TerminationDetectionToken>(-1, token->counter, token->ttl, token->traversed+1));
                 }
               }
@@ -1639,7 +1659,7 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
         // Respond to label request when ready
         if (receivedLabelRequestFromNbr && receivedLabelForNbr) {
           // If there was an internal label, send it
-          qDebug() << "Sending label to neighbour: " + QString::number(internalLabelForNbr);
+          // qDebug() << "Sending label to neighbour: " + QString::number(internalLabelForNbr);
           if (internalLabelForNbr != 0) {
             passNodeToken<LexCompReturnStretchLabelToken>(prevNodeDir, std::make_shared<LexCompReturnStretchLabelToken>(-1, internalLabelForNbr));
             receivedLabelRequestFromNbr = false;
@@ -1822,7 +1842,7 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
       // Tail node (and not head node)
       // Pass termination detection tokens
       if (hasNodeToken<TerminationDetectionToken>(nextNode()->prevNodeDir)) {
-        qDebug() << "Tail node has termination detection token";
+        // qDebug() << "Tail node has termination detection token";
         std::shared_ptr<TerminationDetectionToken> token = takeNodeToken<TerminationDetectionToken>(nextNode()->prevNodeDir);
         bool hasMergeToken = false;
         if (hasNodeToken<LexCompAttemptMergeToken>(predecessor->nextNodeDir)) {
@@ -1846,7 +1866,7 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
           }
         }
         else {
-          qDebug() << "Passing termination detection token...";
+          // qDebug() << "Passing termination detection token...";
           passNodeToken<TerminationDetectionToken>(prevNodeDir, std::make_shared<TerminationDetectionToken>(-1, token->counter, token->ttl, token->traversed));
         }
       }
@@ -1872,6 +1892,9 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
         }
         while (hasNodeToken<LexCompEndOfStretchToken>(nextNode()->prevNodeDir)) {
           takeNodeToken<LexCompEndOfStretchToken>(nextNode()->prevNodeDir);
+        }
+        while (hasNodeToken<LexCompRetrieveNextLabelToken>(predecessor->nextNodeDir)) {
+          takeNodeToken<LexCompRetrieveNextLabelToken>(predecessor->nextNodeDir);
         }
       }
       if (hasNodeToken<LexCompCleanUpForNbrToken>(predecessor->nextNodeDir)) {
@@ -2003,7 +2026,7 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
       // Internal node
       // Pass termination detection tokens
       if (hasNodeToken<TerminationDetectionToken>(nextNode()->prevNodeDir)) {
-        qDebug() << "Internal node has termination detection token";
+        // qDebug() << "Internal node has termination detection token";
         std::shared_ptr<TerminationDetectionToken> token = takeNodeToken<TerminationDetectionToken>(nextNode()->prevNodeDir);
         bool hasMergeToken = false;
         if (hasNodeToken<LexCompAttemptMergeToken>(predecessor->nextNodeDir)) {
@@ -2027,7 +2050,7 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
           }
         }
         else {
-          qDebug() << "Passing termination detection token...";
+          // qDebug() << "Passing termination detection token...";
           passNodeToken<TerminationDetectionToken>(prevNodeDir, std::make_shared<TerminationDetectionToken>(-1, token->counter, token->ttl, token->traversed));
         }
       }
@@ -2054,6 +2077,9 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::activate
         }
         while (hasNodeToken<LexCompEndOfStretchToken>(successor->prevNodeDir)) {
           takeNodeToken<LexCompEndOfStretchToken>(successor->prevNodeDir);
+        }
+        while (hasNodeToken<LexCompRetrieveNextLabelToken>(predecessor->nextNodeDir)) {
+          takeNodeToken<LexCompRetrieveNextLabelToken>(predecessor->nextNodeDir);
         }
       }
       if (hasNodeToken<LexCompCleanUpForNbrToken>(predecessor->nextNodeDir)) {
@@ -2229,8 +2255,10 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::lexCompC
   while (hasNodeToken<LexCompRetrieveNextLabelToken>(prevNode()->nextNodeDir)) {
     takeNodeToken<LexCompRetrieveNextLabelToken>(prevNode()->nextNodeDir);
   }
-  while (hasNodeToken<LexCompReqStretchLabelToken>(prevNode()->nextNodeDir)) {
-    takeNodeToken<LexCompReqStretchLabelToken>(prevNode()->nextNodeDir);
+  if (predecessor != nullptr) {
+    while (hasNodeToken<LexCompReqStretchLabelToken>(prevNode()->nextNodeDir)) {
+      takeNodeToken<LexCompReqStretchLabelToken>(prevNode()->nextNodeDir);
+    }
   }
 }
 
@@ -2252,6 +2280,11 @@ void LeaderElectionStationaryDeterministicParticle::LeaderElectionNode::lexCompC
   }
   while (hasNodeToken<LexCompRetrieveNextLabelForNbrToken>(prevNode()->nextNodeDir)) {
     takeNodeToken<LexCompRetrieveNextLabelForNbrToken>(prevNode()->nextNodeDir);
+  }
+  if (predecessor == nullptr) {
+    while (hasNodeToken<LexCompReqStretchLabelToken>(prevNode()->nextNodeDir)) {
+      takeNodeToken<LexCompReqStretchLabelToken>(prevNode()->nextNodeDir);
+    }
   }
 }
 
