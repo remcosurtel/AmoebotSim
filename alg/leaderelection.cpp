@@ -351,6 +351,7 @@ void LeaderElectionParticle::LeaderElectionAgent::activate() {
             takeAgentToken<FinalSegmentCleanToken>(prevAgentDir)->
             hasCoveredCandidate;
         if (!coveredCandidateCheck && !gotAnnounceInCompare) {
+          isCoveredCandidate = true;
           agentState = State::Demoted;
           setStateColor();
         } else {
@@ -476,7 +477,8 @@ void LeaderElectionParticle::LeaderElectionAgent::activate() {
       if (passTokensDir == 0 && !absorbedActiveToken) {
         if (takeAgentToken<ActiveSegmentToken>(nextAgentDir)->isFinal) {
           passAgentToken<FinalSegmentCleanToken>
-              (nextAgentDir, std::make_shared<FinalSegmentCleanToken>());
+              (nextAgentDir, std::make_shared<FinalSegmentCleanToken>(-1, isCoveredCandidate));
+          isCoveredCandidate = false;
         } else {
           absorbedActiveToken = true;
         }
